@@ -1,5 +1,4 @@
-# bot.py
-
+# -*- coding: utf-8 -*-
 import os
 import logging
 from datetime import datetime, timezone
@@ -28,10 +27,12 @@ TELEGRAM_TOKEN  = os.getenv("TELEGRAM_TOKEN")
 ADMIN_CHAT_ID   = int(os.getenv("ADMIN_CHAT_ID", "0"))
 SECOND_ADMIN_ID = 7615248486
 ADMIN_IDS       = {ADMIN_CHAT_ID, SECOND_ADMIN_ID}
+ALL_ADMINS      = list(ADMIN_IDS)   # ВСЕ админы получают уведомления
+
 if not TELEGRAM_TOKEN or ADMIN_CHAT_ID == 0:
     raise RuntimeError("TELEGRAM_TOKEN или ADMIN_CHAT_ID не установлены")
 
-# Состояния разговора
+# ─── Состояния разговоров ─────────────────────────────────────────────────────
 (
     STATE_ROW,
     STATE_COMP,
@@ -45,7 +46,7 @@ if not TELEGRAM_TOKEN or ADMIN_CHAT_ID == 0:
     STATE_FEEDBACK_TEXT,
 ) = range(10)
 
-# Постоянные списки
+# ─── Константы ────────────────────────────────────────────────────────────────
 PROBLEMS = [
     "Вопросы по тф",
     "Не работают уши",
@@ -57,17 +58,16 @@ PROBLEMS = [
     "Плохой инет (или его нет)",
     "Другая проблема",
 ]
-STATUS_OPTIONS = ["принято", "в работе", "готово", "отменено"]
-
-USER_MAIN_MENU = [["Создать запрос", "Мои запросы"], ["Справка"]]
-ADMIN_MAIN_MENU = [
+STATUS_OPTIONS    = ["принято", "в работе", "готово", "отменено"]
+USER_MAIN_MENU    = [["Создать запрос", "Мои запросы"], ["Справка"]]
+ADMIN_MAIN_MENU   = [
     ["Все запросы", "Архив запросов", "Статистика"],
     ["Очистить все запросы", "Отправить всем сообщение", "Изменить CRM"],
     ["Благодарности"],
 ]
-CANCEL_KEYBOARD = ReplyKeyboardMarkup([["Отмена"]], resize_keyboard=True)
+CANCEL_KEYBOARD   = ReplyKeyboardMarkup([["Отмена"]], resize_keyboard=True)
 
-# Полные тексты справки
+# ─── Тексты справки ───────────────────────────────────────────────────────────
 HELP_TEXT_RULES = """📞 Правила пользования телефонией
 
 ⚠️ Триггеры в разговоре
@@ -117,6 +117,7 @@ https://www.egrul.ru/inn
 https://8sot.su
 https://randomus.ru
 https://2gis.ru
+https://geostudy.ru/timemap.html
 """
 
 HELP_TEXT_SPEECH = """Здравствуйте. Вас приветствует компания МГТС. Меня зовут Евгений.  
@@ -185,15 +186,15 @@ def format_kyiv_time(ts: str) -> str:
     except:
         return ts
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Handlers
+# ─── Handlers ─────────────────────────────────────────────────────────────────
 
 async def start_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await db.init_db()
     u = update.effective_user
     await db.add_user(u.id, u.full_name)
     menu = ADMIN_MAIN_MENU if u.id in ADMIN_IDS else USER_MAIN_MENU
-    await update.message.reply_text("Привет! Выберите действие:", reply_markup=ReplyKeyboardMarkup(menu, resize_keyboard=True))
+    await update.message.reply_text("Привет! Выберите действие:",
+                                    reply_markup=ReplyKeyboardMarkup(menu, resize_keyboard=True))
     return ConversationHandler.END
 
 # — Создание запроса —
@@ -222,10 +223,12 @@ async def comp_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     if not txt.isdigit() or not (1 <= int(txt) <= max_comp):
         await update.message.reply_text(f"Неверный комп. Введите 1–{max_comp}:", reply_markup=CANCEL_KEYBOARD)
         return STATE_COMP
+    ctx.user_data["row"] = str(row)
     ctx.user_data["comp"] = txt
-    ctx.user_data["row_comp"] = f"{ctx.user_data['row']}/{txt}"
+    ctx.user_data["row_comp"] = f"{row}/{txt}"
     kb = [PROBLEMS[i:i+2] for i in range(0, len(PROBLEMS), 2)] + [["Отмена"]]
-    await update.message.reply_text("Выберите тип проблемы:", reply_markup=ReplyKeyboardMarkup(kb, one_time_keyboard=True, resize_keyboard=True))
+    await update.message.reply_text("Выберите тип проблемы:",
+                                    reply_markup=ReplyKeyboardMarkup(kb, one_time_keyboard=True, resize_keyboard=True))
     return STATE_PROBLEM_MENU
 
 async def problem_menu_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -247,30 +250,29 @@ async def custom_desc_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
     return await send_request(update, ctx)
 
 async def send_request(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    rowc = ctx.user_data["row_comp"]
-    prob = ctx.user_data["problem"]
-    desc = ctx.user_data["description"]
-    user = update.effective_user
-    req_id = await db.add_ticket(rowc, prob, desc, user.full_name, user.id)
+    rowc    = ctx.user_data["row_comp"]
+    prob    = ctx.user_data["problem"]
+    desc    = ctx.user_data["description"]
+    user    = update.effective_user
+    req_id  = await db.add_ticket(rowc, prob, desc, user.full_name, user.id)
 
-    # уведомление пользователю
+    # Уведомление пользователя
     await update.message.reply_text(
         f"✅ Запрос #{req_id} зарегистрирован.\nР/К: {rowc}\n{prob}. {desc}",
         reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True),
     )
 
-    # уведомление админу(ам)
-    if prob == "Вопросы по тф":
-        recs = [ADMIN_CHAT_ID, SECOND_ADMIN_ID]
-    else:
-        recs = [ADMIN_CHAT_ID]
-
-    btns_s = [InlineKeyboardButton(s, callback_data=f"status:{req_id}:{s}") for s in STATUS_OPTIONS if s != "отменено"]
-    btn_r = InlineKeyboardButton("Ответить", callback_data=f"reply:{req_id}")
+    # Уведомление ВСЕМ администраторам
+    btns_s  = [InlineKeyboardButton(s, callback_data=f"status:{req_id}:{s}")
+               for s in STATUS_OPTIONS if s != "отменено"]
+    btn_r   = InlineKeyboardButton("Ответить", callback_data=f"reply:{req_id}")
     created = format_kyiv_time((await db.get_ticket(req_id))[7])
-    admin_text = f"Новый запрос #{req_id}\n{rowc}: {prob}\nОписание: {desc}\nОт: {user.full_name}, {created}"
+    admin_text = (f"Новый запрос #{req_id}\n"
+                  f"{rowc}: {prob}\n"
+                  f"Описание: {desc}\n"
+                  f"От: {user.full_name}, {created}")
     markup = InlineKeyboardMarkup([btns_s, [btn_r]])
-    for aid in recs:
+    for aid in ALL_ADMINS:
         await ctx.bot.send_message(aid, admin_text, reply_markup=markup)
 
     return ConversationHandler.END
@@ -278,59 +280,70 @@ async def send_request(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 # — Мои запросы —
 
 async def my_requests(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
+    uid  = update.effective_user.id
     rowc = ctx.user_data.get("row_comp", "")
     all_r = await db.list_tickets()
-    mine = [r for r in all_r if r[5] == uid and r[1] == rowc]
+    mine  = [r for r in all_r if r[5] == uid and r[1] == rowc]
     if not mine:
-        await update.message.reply_text(f"У вас нет запросов для {rowc}.", reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True))
+        await update.message.reply_text(f"У вас нет запросов для {rowc}.",
+                                        reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True))
         return
-    btns = [[InlineKeyboardButton(f"#{r[0]} ({r[1]}) [{r[6]}] {r[2]}", callback_data=f"show:{r[0]}")] for r in mine]
-    await update.message.reply_text("Ваши запросы — нажмите для подробностей:", reply_markup=InlineKeyboardMarkup(btns))
+    btns = [[InlineKeyboardButton(f"#{r[0]} ({r[1]}) [{r[6]}] {r[2]}",
+                                  callback_data=f"show:{r[0]}")]
+            for r in mine]
+    await update.message.reply_text("Ваши запросы — нажмите для подробностей:",
+                                    reply_markup=InlineKeyboardMarkup(btns))
 
 async def show_request(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query; await q.answer()
+    q   = update.callback_query; await q.answer()
     rid = int(q.data.split(":")[1])
-    r = await db.get_ticket(rid)
+    r   = await db.get_ticket(rid)
     rowc = ctx.user_data.get("row_comp", "")
     if not r or r[5] != q.from_user.id or r[1] != rowc:
         await q.edit_message_reply_markup(None)
-        await q.message.reply_text("Не ваш запрос.", reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True))
+        await q.message.reply_text("Не ваш запрос.",
+                                   reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True))
         return
     await q.edit_message_reply_markup(None)
     created = format_kyiv_time(r[7])
-    detail = f"#{rid} — {r[1]}\nПроблема: {r[2]}\nСтатус: {r[6]}\nСоздано: {created}"
+    detail  = (f"#{rid} — {r[1]}\n"
+               f"Проблема: {r[2]}\n"
+               f"Статус: {r[6]}\n"
+               f"Создано: {created}")
     if r[6] not in ("готово", "отменено"):
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("Отменить запрос", callback_data=f"cancel_req:{rid}")]])
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("Отменить запрос",
+                                                         callback_data=f"cancel_req:{rid}")]])
         await q.message.reply_text(detail, reply_markup=kb)
     else:
         await q.message.reply_text(detail)
-    await q.message.reply_text("Главное меню:", reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True))
+    await q.message.reply_text("Главное меню:",
+                               reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True))
 
 async def cancel_request_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query; await q.answer()
+    q   = update.callback_query; await q.answer()
     rid = int(q.data.split(":")[1])
-    r = await db.get_ticket(rid)
+    r   = await db.get_ticket(rid)
     if not r or r[5] != q.from_user.id:
         await q.edit_message_text("Не удалось отменить.")
         return
     await db.update_status(rid, "отменено")
     await q.edit_message_text(f"Запрос #{rid} отменён.")
-    # уведомляем админов
-    if r[2] == "Вопросы по тф":
-        await ctx.bot.send_message(ADMIN_CHAT_ID, f"🔔 Запрос #{rid} отменён пользователем {q.from_user.full_name}")
-        await ctx.bot.send_message(SECOND_ADMIN_ID, f"🔔 Запрос #{rid} отменён пользователем {q.from_user.full_name}")
-    else:
-        await ctx.bot.send_message(ADMIN_CHAT_ID, f"🔔 Запрос #{rid} отменён пользователем {q.from_user.full_name}")
-    await ctx.bot.send_message(q.from_user.id, "Главное меню:", reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True))
+    # уведомляем ВСЕХ админов
+    for aid in ALL_ADMINS:
+        await ctx.bot.send_message(aid,
+            f"🔔 Запрос #{rid} отменён пользователем {q.from_user.full_name}")
+    # возврат пользователю
+    await ctx.bot.send_message(q.from_user.id,
+        "Главное меню:", reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True))
 
 # — Ответ админа —
 
 async def init_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    q = update.callback_query; await q.answer()
+    q   = update.callback_query; await q.answer()
     rid = int(q.data.split(":")[1])
     ctx.user_data["reply_ticket"] = rid
-    await q.message.reply_text(f"Введите ответ для запроса #{rid}:", reply_markup=CANCEL_KEYBOARD)
+    await q.message.reply_text(f"Введите ответ для запроса #{rid}:",
+                               reply_markup=CANCEL_KEYBOARD)
     return STATE_REPLY
 
 async def handle_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -341,15 +354,18 @@ async def handle_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     tkt = await db.get_ticket(rid)
     if tkt:
         await ctx.bot.send_message(tkt[5], f"💬 Ответ на запрос #{rid}:\n{txt}")
-        await update.message.reply_text("Ответ отправлен.", reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True))
+        await update.message.reply_text("Ответ отправлен.",
+                           reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True))
     else:
-        await update.message.reply_text("Запрос не найден.", reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True))
+        await update.message.reply_text("Запрос не найден.",
+                           reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True))
     return ConversationHandler.END
 
 # — Рассылка —
 
 async def init_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Введите текст рассылки:", reply_markup=CANCEL_KEYBOARD)
+    await update.message.reply_text("Введите текст рассылки:",
+                                   reply_markup=CANCEL_KEYBOARD)
     return STATE_BROADCAST
 
 async def handle_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -363,7 +379,9 @@ async def handle_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> in
             sent += 1
         except:
             pass
-    await update.message.reply_text(f"Рассылка отправлена {sent} пользователям.", reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True))
+    await update.message.reply_text(
+        f"Рассылка отправлена {sent} пользователям.",
+        reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True))
     return ConversationHandler.END
 
 # — Справка и CRM —
@@ -374,21 +392,22 @@ async def help_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ["Спич",            "CRM"],
         ["Назад"]
     ]
-    await update.message.reply_text("Выберите раздел справки:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+    await update.message.reply_text("Выберите раздел справки:",
+                                    reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
 
 async def rules_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(HELP_TEXT_RULES)
     await help_menu(update, ctx)
 
-async def links_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+async def links_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(HELP_TEXT_LINKS)
     await help_menu(update, ctx)
 
-async def speech_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+async def speech_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(HELP_TEXT_SPEECH)
     await help_menu(update, ctx)
 
-async def crm_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+async def crm_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     raw = await db.get_setting("crm_text") or ""
     lines = []
     for ln in raw.splitlines():
@@ -404,15 +423,16 @@ async def crm_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("\n".join(lines))
     await help_menu(update, ctx)
 
-async def back_to_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    await start_menu(update, ctx)
+async def back_to_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    return await start_menu(update, ctx)
 
 # — Изменить CRM —
 
 async def edit_crm_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     if update.effective_user.id not in ADMIN_IDS:
         return
-    await update.message.reply_text("Введите весь текст CRM:", reply_markup=CANCEL_KEYBOARD)
+    await update.message.reply_text("Введите весь текст CRM:",
+                                   reply_markup=CANCEL_KEYBOARD)
     return STATE_CRM_EDIT
 
 async def edit_crm_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -420,10 +440,11 @@ async def edit_crm_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     if txt == "Отмена":
         return await cancel(update, ctx)
     await db.set_setting("crm_text", txt)
-    await update.message.reply_text("✅ CRM сохранена.", reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True))
+    await update.message.reply_text("✅ CRM сохранена.",
+                          reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True))
     return ConversationHandler.END
 
-# — Админ: все запросы, архив, статистика, очистка, благодарности —
+# — Админские разделы — all_requests, archive, stats, thanks, clear_requests —
 
 async def all_requests_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id not in ADMIN_IDS:
@@ -436,7 +457,8 @@ async def all_requests_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     for r in active:
         rid, rowc, prob, descr, uname, uid, st, cts = r
         created = format_kyiv_time(cts)
-        btns_s = [InlineKeyboardButton(s, callback_data=f"status:{rid}:{s}") for s in STATUS_OPTIONS if s != "отменено"]
+        btns_s = [InlineKeyboardButton(s, callback_data=f"status:{rid}:{s}")
+                  for s in STATUS_OPTIONS if s != "отменено"]
         btn_r = InlineKeyboardButton("Ответить", callback_data=f"reply:{rid}")
         await ctx.bot.send_message(
             update.effective_chat.id,
@@ -445,25 +467,30 @@ async def all_requests_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
 async def init_archive(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Введите дату (ГГГГ-ММ-ДД):", reply_markup=CANCEL_KEYBOARD)
+    await update.message.reply_text("Введите дату (ГГГГ-ММ-ДД):",
+                                   reply_markup=CANCEL_KEYBOARD)
     return STATE_ARCHIVE_DATE
 
 async def archive_date_invalid(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Неверный формат. Введите ГГГГ-ММ-ДД:", reply_markup=CANCEL_KEYBOARD)
+    await update.message.reply_text("Неверный формат. Введите ГГГГ-ММ-ДД:",
+                                   reply_markup=CANCEL_KEYBOARD)
     return STATE_ARCHIVE_DATE
 
 async def archive_by_date_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    d = update.message.text.strip()
+    d    = update.message.text.strip()
     all_r = await db.list_tickets()
     arch = [r for r in all_r if r[7].startswith(d) and r[6] in ("готово", "отменено")]
     if not arch:
-        await update.message.reply_text(f"Нет запросов за {d}.", reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True))
+        await update.message.reply_text(f"Нет запросов за {d}.",
+                    reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True))
     else:
         for r in arch:
             rid, rowc, prob, descr, uname, uid, st, cts = r
             c = format_kyiv_time(cts)
-            await update.message.reply_text(f"#{rid} [{st}]\n{rowc}: {prob}\nОписание: {descr}\nОт: {uname}, {c}")
-        await update.message.reply_text("Меню администратора:", reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True))
+            await update.message.reply_text(
+                f"#{rid} [{st}]\n{rowc}: {prob}\nОписание: {descr}\nОт: {uname}, {c}")
+        await update.message.reply_text("Меню администратора:",
+                    reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True))
     return ConversationHandler.END
 
 async def stats_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -479,65 +506,74 @@ async def stats_show(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         return await cancel(update, ctx)
     parts = [p.strip() for p in txt.split("—")]
     if len(parts) != 2:
-        await update.message.reply_text("Неверный формат, используйте YYYY-MM-DD — YYYY-MM-DD", reply_markup=CANCEL_KEYBOARD)
+        await update.message.reply_text(
+            "Неверный формат, используйте YYYY-MM-DD — YYYY-MM-DD",
+            reply_markup=CANCEL_KEYBOARD
+        )
         return STATE_STATS_DATE
     start_str, end_str = parts
-    by_status = await db.count_by_status(start_str, end_str)
+    by_status  = await db.count_by_status(start_str, end_str)
     by_problem = await db.count_by_problem(start_str, end_str)
-    lines = [f"📊 Статистика с {start_str} по {end_str}:", "\nПо статусам:"]
+    lines = [f"📊 Стата с {start_str} по {end_str}:", "\nПо статусам:"]
     for st, cnt in by_status.items():
         lines.append(f"  • {st}: {cnt}")
     lines.append("\nПо типам проблем:")
     for pr, cnt in by_problem.items():
         lines.append(f"  • {pr}: {cnt}")
-    await update.message.reply_text("\n".join(lines), reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True))
+    await update.message.reply_text("\n".join(lines),
+        reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True))
     return ConversationHandler.END
 
 async def status_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query; await q.answer()
-    _, rid_s, new_st = q.data.split(":"); rid = int(rid_s)
+    q      = update.callback_query; await q.answer()
+    _, rid_s, new_st = q.data.split(":")
+    rid    = int(rid_s)
     await db.update_status(rid, new_st)
 
+    # Обновляем своё сообщение
     if new_st in ("готово", "отменено"):
         await q.edit_message_reply_markup(None)
         await q.edit_message_text(f"#{rid} — статус: «{new_st}»")
     else:
-        btns_s = [InlineKeyboardButton(s, callback_data=f"status:{rid}:{s}") for s in STATUS_OPTIONS if s != "отменено"]
+        btns_s = [InlineKeyboardButton(s, callback_data=f"status:{rid}:{s}")
+                  for s in STATUS_OPTIONS if s != "отменено"]
         btn_r = InlineKeyboardButton("Ответить", callback_data=f"reply:{rid}")
-        await q.edit_message_text(f"#{rid} — статус: «{new_st}»", reply_markup=InlineKeyboardMarkup([btns_s, [btn_r]]))
+        await q.edit_message_text(f"# {rid} — статус: «{new_st}»",
+                                  reply_markup=InlineKeyboardMarkup([btns_s, [btn_r]]))
 
     tkt = await db.get_ticket(rid)
     if not tkt:
         return
 
     user_id = tkt[5]
-    problem = tkt[2]
 
-    # Notify admin(s)
-    if problem == "Вопросы по тф":
-        await ctx.bot.send_message(ADMIN_CHAT_ID, f"🔔 Статус запроса #{rid} обновлён на «{new_st}»")
-        await ctx.bot.send_message(SECOND_ADMIN_ID, f"🔔 Статус запроса #{rid} обновлён на «{new_st}»")
-    else:
-        await ctx.bot.send_message(ADMIN_CHAT_ID, f"🔔 Статус запроса #{rid} обновлён на «{new_st}»")
+    # Уведомляем ВСЕХ админов
+    for aid in ALL_ADMINS:
+        await ctx.bot.send_message(
+            aid, f"🔔 Статус запроса #{rid} обновлён на «{new_st}»"
+        )
 
-    # Notify user
-    await ctx.bot.send_message(user_id, f"🔔 Статус вашего запроса #{rid} обновлён: «{new_st}»")
+    # Уведомляем пользователя
+    await ctx.bot.send_message(
+        user_id, f"🔔 Статус вашего запроса #{rid} обновлён: «{new_st}»"
+    )
 
-    # Если новый статус "готово", даём две кнопки: "Проблема не решена" и "спасибо любимый айтишник <3"
+    # Если "готово" — предлагаем фидбэк
     if new_st == "готово":
-        feedback_btn = InlineKeyboardButton("Проблема не решена", callback_data=f"feedback:{rid}")
-        thanks_btn = InlineKeyboardButton("спасибо любимый айтишник <3", callback_data=f"thanks:{rid}")
+        fb_btn = InlineKeyboardButton("Проблема не решена", callback_data=f"feedback:{rid}")
+        th_btn = InlineKeyboardButton("спасибо любимый айтишник <3", callback_data=f"thanks:{rid}")
         await ctx.bot.send_message(
             user_id,
-            "Если проблема не решена, или вы хотите поблагодарить, нажмите соответствующую кнопку:",
-            reply_markup=InlineKeyboardMarkup([[feedback_btn, thanks_btn]])
+            "Если проблема не решена или хотите поблагодарить, нажмите:",
+            reply_markup=InlineKeyboardMarkup([[fb_btn, th_btn]])
         )
 
 async def init_feedback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     q = update.callback_query; await q.answer()
     rid = int(q.data.split(":")[1])
     ctx.user_data["feedback_ticket"] = rid
-    await q.message.reply_text("Опишите, пожалуйста, что осталось нерешённым:", reply_markup=CANCEL_KEYBOARD)
+    await q.message.reply_text("Опишите, пожалуйста, что осталось нерешённым:",
+                               reply_markup=CANCEL_KEYBOARD)
     return STATE_FEEDBACK_TEXT
 
 async def handle_feedback_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -547,87 +583,68 @@ async def handle_feedback_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
     rid = ctx.user_data.get("feedback_ticket")
     tkt = await db.get_ticket(rid)
     if not tkt:
-        await update.message.reply_text("Ошибка: запрос не найден.", reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True))
+        await update.message.reply_text("Ошибка: запрос не найден.",
+                                        reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True))
         return ConversationHandler.END
 
-    # Обновляем статус обратно на "принято"
+    # Возврат в статус "принято"
     await db.update_status(rid, "принято")
 
-    # Отправляем сообщение админу(ам) с текстом фидбека
-    problem = tkt[2]
-    feedback_msg = f"💬 Пользователь добавил фидбэк к запросу #{rid}:\n{txt}"
-    recipients = [ADMIN_CHAT_ID] if problem != "Вопросы по тф" else [ADMIN_CHAT_ID, SECOND_ADMIN_ID]
+    problem  = tkt[2]
+    feedback_msg = f"💬 Фидбэк к запросу #{rid}:\n{txt}"
+    recipients   = ALL_ADMINS
     for aid in recipients:
         await ctx.bot.send_message(aid, feedback_msg)
 
-    # Теперь снова шлём админу уведомление о запросе как о новом, но со статусом "принято"
-    rowc, prob, descr, uname = tkt[1], tkt[2], tkt[3], tkt[4]
-    created = format_kyiv_time(tkt[7])
-    new_text = (
-        f"🔄 Запрос #{rid} возвращён в «принято» после фидбека\n"
-        f"{rowc}: {prob}\n"
-        f"Описание: {descr}\n"
-        f"От: {uname}, {created}"
-    )
-    btns_s = [InlineKeyboardButton(s, callback_data=f"status:{rid}:{s}") for s in STATUS_OPTIONS if s != "отменено"]
-    btn_r = InlineKeyboardButton("Ответить", callback_data=f"reply:{rid}")
-    markup = InlineKeyboardMarkup([btns_s, [btn_r]])
-
-    for aid in recipients:
-        await ctx.bot.send_message(aid, new_text, reply_markup=markup)
+        # Шлём админам заново как новый
+        btns_s = [InlineKeyboardButton(s, callback_data=f"status:{rid}:{s}")
+                  for s in STATUS_OPTIONS if s != "отменено"]
+        btn_r = InlineKeyboardButton("Ответить", callback_data=f"reply:{rid}")
+        created = format_kyiv_time(tkt[7])
+        new_text = (f"🔄 Запрос #{rid} возвращён в «принято» после фидбека\n"
+                    f"{tkt[1]}: {tkt[2]}\n"
+                    f"Описание: {tkt[3]}\n"
+                    f"От: {tkt[4]}, {created}")
+        await ctx.bot.send_message(aid, new_text,
+                                   reply_markup=InlineKeyboardMarkup([btns_s, [btn_r]]))
 
     await update.message.reply_text(
-        "Спасибо за обратную связь! Запрос возвращён в новые. Возвращаемся в главное меню.",
+        "Спасибо за обратную связь! Возвращаемся в главное меню.",
         reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True)
     )
     return ConversationHandler.END
 
 async def handle_thanks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query; await q.answer()
+    q   = update.callback_query; await q.answer()
     rid = int(q.data.split(":")[1])
     tkt = await db.get_ticket(rid)
     if not tkt:
         await q.edit_message_text("Ошибка: запрос не найден.")
         return
 
-    problem = tkt[2]
-    # Определяем, кому отправлялась заявка: если "Вопросы по тф" – то двум, иначе только ADMIN_CHAT_ID
-    recipients = [ADMIN_CHAT_ID] if problem != "Вопросы по тф" else [ADMIN_CHAT_ID, SECOND_ADMIN_ID]
-
-    # Для каждого администратора увеличиваем отдельный счётчик "thanks_<admin_id>"
-    for aid in recipients:
+    for aid in ALL_ADMINS:
         key = f"thanks_{aid}"
-        old = await db.get_setting(key)
-        count = int(old) if old and old.isdigit() else 0
-        count += 1
-        await db.set_setting(key, str(count))
-        # Отправляем админу сообщение о благодарности
-        uname = q.from_user.full_name
-        thanks_msg = f"🙏 Пользователь {uname} поблагодарил за запрос #{rid}."
-        await ctx.bot.send_message(aid, thanks_msg)
+        old = await db.get_setting(key) or "0"
+        cnt = int(old) + 1
+        await db.set_setting(key, str(cnt))
+        await ctx.bot.send_message(aid,
+            f"🙏 Пользователь {q.from_user.full_name} поблагодарил за запрос #{rid}.")
 
     await q.edit_message_text("Спасибо за благодарность! ❤")
-    await ctx.bot.send_message(q.from_user.id, "Главное меню:", reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True))
+    await ctx.bot.send_message(q.from_user.id, "Главное меню:",
+                               reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True))
 
 async def show_thanks_count(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in ADMIN_IDS:
         return
-    # Читаем отдельные счётчики
-    count1 = 0
-    count2 = 0
-    old1 = await db.get_setting(f"thanks_{ADMIN_CHAT_ID}")
-    if old1 and old1.isdigit():
-        count1 = int(old1)
-    old2 = await db.get_setting(f"thanks_{SECOND_ADMIN_ID}")
-    if old2 and old2.isdigit():
-        count2 = int(old2)
-
-    text = (
-        f"Благодарности по администраторам:\n"
-        f"• Admin (ID: {ADMIN_CHAT_ID}): {count1}\n"
-        f"• Admin (ID: {SECOND_ADMIN_ID}): {count2}"
+    cnts = []
+    for aid in ALL_ADMINS:
+        v = await db.get_setting(f"thanks_{aid}") or "0"
+        cnts.append(f"Admin {aid}: {v}")
+    await update.message.reply_text(
+        "Благодарности:\n" + "\n".join(cnts),
+        reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True)
     )
-    await update.message.reply_text(text, reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True))
 
 async def clear_requests_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id not in ADMIN_IDS:
@@ -636,8 +653,11 @@ async def clear_requests_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await ctx.bot.send_message(update.effective_chat.id, "🔄 Все запросы удалены администратором.")
 
 async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("❌ Отменено.", reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True))
+    await update.message.reply_text("❌ Отменено.",
+                                    reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True))
     return ConversationHandler.END
+
+# ─── Запуск бота ───────────────────────────────────────────────────────────────
 
 def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
@@ -646,22 +666,31 @@ def main():
     conv_ticket = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Создать запрос$"), start_conversation)],
         states={
-            STATE_ROW:          [MessageHandler(filters.Regex("^Отмена$"), cancel), MessageHandler(filters.TEXT & ~filters.COMMAND, row_handler)],
-            STATE_COMP:         [MessageHandler(filters.Regex("^Отмена$"), cancel), MessageHandler(filters.TEXT & ~filters.COMMAND, comp_handler)],
-            STATE_PROBLEM_MENU: [MessageHandler(filters.Regex("^Отмена$"), cancel), MessageHandler(filters.TEXT & ~filters.COMMAND, problem_menu_handler)],
-            STATE_CUSTOM_DESC:  [MessageHandler(filters.Regex("^Отмена$"), cancel), MessageHandler(filters.TEXT & ~filters.COMMAND, custom_desc_handler)],
+            STATE_ROW:          [MessageHandler(filters.Regex("^Отмена$"), cancel),
+                                 MessageHandler(filters.TEXT & ~filters.COMMAND, row_handler)],
+            STATE_COMP:         [MessageHandler(filters.Regex("^Отмена$"), cancel),
+                                 MessageHandler(filters.TEXT & ~filters.COMMAND, comp_handler)],
+            STATE_PROBLEM_MENU: [MessageHandler(filters.Regex("^Отмена$"), cancel),
+                                 MessageHandler(filters.TEXT & ~filters.COMMAND, problem_menu_handler)],
+            STATE_CUSTOM_DESC:  [MessageHandler(filters.Regex("^Отмена$"), cancel),
+                                 MessageHandler(filters.TEXT & ~filters.COMMAND, custom_desc_handler)],
         },
-        fallbacks=[CommandHandler("cancel", cancel), MessageHandler(filters.Regex("^Отмена$"), cancel)],
+        fallbacks=[CommandHandler("cancel", cancel),
+                   MessageHandler(filters.Regex("^Отмена$"), cancel)],
     )
     conv_reply = ConversationHandler(
         entry_points=[CallbackQueryHandler(init_reply, pattern=r"^reply:\d+$")],
-        states={ STATE_REPLY: [ MessageHandler(filters.Regex("^Отмена$"), cancel), MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reply) ] },
-        fallbacks=[CommandHandler("cancel", cancel), MessageHandler(filters.Regex("^Отмена$"), cancel)],
+        states={ STATE_REPLY: [ MessageHandler(filters.Regex("^Отмена$"), cancel),
+                               MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reply) ]},
+        fallbacks=[CommandHandler("cancel", cancel),
+                   MessageHandler(filters.Regex("^Отмена$"), cancel)],
     )
     conv_broadcast = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Отправить всем сообщение$"), init_broadcast)],
-        states={ STATE_BROADCAST: [ MessageHandler(filters.Regex("^Отмена$"), cancel), MessageHandler(filters.TEXT & ~filters.COMMAND, handle_broadcast) ] },
-        fallbacks=[CommandHandler("cancel", cancel), MessageHandler(filters.Regex("^Отмена$"), cancel)],
+        states={ STATE_BROADCAST: [ MessageHandler(filters.Regex("^Отмена$"), cancel),
+                                   MessageHandler(filters.TEXT & ~filters.COMMAND, handle_broadcast) ]},
+        fallbacks=[CommandHandler("cancel", cancel),
+                   MessageHandler(filters.Regex("^Отмена$"), cancel)],
     )
     conv_archive = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Архив запросов$"), init_archive)],
@@ -671,22 +700,29 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, archive_date_invalid),
             ],
         },
-        fallbacks=[CommandHandler("cancel", cancel), MessageHandler(filters.Regex("^Отмена$"), cancel)],
+        fallbacks=[CommandHandler("cancel", cancel),
+                   MessageHandler(filters.Regex("^Отмена$"), cancel)],
     )
     conv_stats = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Статистика$"), stats_start)],
-        states={ STATE_STATS_DATE: [ MessageHandler(filters.TEXT & ~filters.COMMAND, stats_show) ] },
-        fallbacks=[CommandHandler("cancel", cancel), MessageHandler(filters.Regex("^Отмена$"), cancel)],
+        states={ STATE_STATS_DATE: [ MessageHandler(filters.TEXT & ~filters.COMMAND, stats_show) ]},
+        fallbacks=[CommandHandler("cancel", cancel),
+                   MessageHandler(filters.Regex("^Отмена$"), cancel)],
     )
     conv_crm = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Изменить CRM$"), edit_crm_start)],
-        states={ STATE_CRM_EDIT: [ MessageHandler(filters.TEXT & ~filters.COMMAND, edit_crm_save) ] },
-        fallbacks=[CommandHandler("cancel", cancel), MessageHandler(filters.Regex("^Отмена$"), cancel)],
+        states={ STATE_CRM_EDIT: [ MessageHandler(filters.TEXT & ~filters.COMMAND, edit_crm_save) ]},
+        fallbacks=[CommandHandler("cancel", cancel),
+                   MessageHandler(filters.Regex("^Отмена$"), cancel)],
     )
     conv_feedback = ConversationHandler(
         entry_points=[CallbackQueryHandler(init_feedback, pattern=r"^feedback:\d+$")],
-        states={ STATE_FEEDBACK_TEXT: [ MessageHandler(filters.TEXT & ~filters.COMMAND, handle_feedback_text), MessageHandler(filters.Regex("^Отмена$"), cancel) ]},
-        fallbacks=[CommandHandler("cancel", cancel), MessageHandler(filters.Regex("^Отмена$"), cancel)],
+        states={ STATE_FEEDBACK_TEXT: [
+                   MessageHandler(filters.TEXT & ~filters.COMMAND, handle_feedback_text),
+                   MessageHandler(filters.Regex("^Отмена$"), cancel)
+               ]},
+        fallbacks=[CommandHandler("cancel", cancel),
+                   MessageHandler(filters.Regex("^Отмена$"), cancel)],
     )
 
     # Регистрация хендлеров
