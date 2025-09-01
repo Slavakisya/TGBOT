@@ -2,14 +2,8 @@ import os
 print("DEBUG: TELEGRAM_TOKEN = {!r}".format(os.getenv("TELEGRAM_TOKEN")))
 import logging
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    ConversationHandler,
-    filters,
-)
+from telegram.ext import (Application, CommandHandler, MessageHandler, ContextTypes, ConversationHandler, filters)
+
 import requests
 
 # Логирование (чтобы видеть ошибки в консоли)
@@ -93,8 +87,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 def main():
     # Создаём приложение
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
