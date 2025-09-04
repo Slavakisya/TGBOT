@@ -694,6 +694,15 @@ def main():
                    MessageHandler(filters.Regex("^Отмена$"), cancel)],
     )
 
+    # register conversation handlers
+    app.add_handler(conv_ticket)
+    app.add_handler(conv_reply)
+    app.add_handler(conv_broadcast)
+    app.add_handler(conv_archive)
+    app.add_handler(conv_stats)
+    app.add_handler(conv_crm)
+    app.add_handler(conv_feedback)
+
     # Команды/меню
     app.add_handler(CommandHandler("start", start_menu))
     app.add_handler(MessageHandler(filters.Regex("^Мои запросы$"), my_requests))
