@@ -625,8 +625,6 @@ def main():
            .token(TELEGRAM_TOKEN)
            .post_init(on_startup)
            .build())
-    ...
-    app.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
     # Conversations
     conv_ticket = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Создать запрос$"), start_conversation)],
