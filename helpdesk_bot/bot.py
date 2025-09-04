@@ -55,6 +55,11 @@ ALL_ADMINS = [a for a in ADMIN_IDS if a]  # уберём нули, если пе
 if not TELEGRAM_TOKEN or not ALL_ADMINS:
     raise RuntimeError("TELEGRAM_TOKEN или ADMIN_CHAT_ID(ы) не установлены")
 
+
+def is_admin(user_id: int) -> bool:
+    """Проверяет, является ли id администратора."""
+    return user_id in ADMIN_IDS
+
 # ─────────────────────────── СОСТОЯНИЯ FSM ───────────────────────────────────
 (
     STATE_ROW,
