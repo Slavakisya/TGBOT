@@ -75,8 +75,9 @@ def is_admin(user_id: int) -> bool:
     STATE_ARCHIVE_DATE,
     STATE_STATS_DATE,
     STATE_CRM_EDIT,
+    STATE_SPEECH_EDIT,
     STATE_FEEDBACK_TEXT,
-) = range(10)
+) = range(11)
 
 # ───────────────────────────── КОНСТАНТЫ ──────────────────────────────────────
 PROBLEMS = [
@@ -95,7 +96,7 @@ STATUS_OPTIONS  = ["принято", "в работе", "готово", "отм�
 USER_MAIN_MENU  = [["Создать запрос", "Мои запросы"], ["Справка"]]
 ADMIN_MAIN_MENU = [
     ["Все запросы", "Архив запросов", "Статистика"],
-    ["Очистить все запросы", "Отправить всем сообщение", "Изменить CRM"],
+    ["Очистить все запросы", "Отправить всем сообщение", "Изменить CRM", "Изменить спич"],
     ["Благодарности"],
 ]
 CANCEL_KEYBOARD = ReplyKeyboardMarkup([["Отмена"]], resize_keyboard=True)
@@ -153,8 +154,6 @@ https://2gis.ru
 https://geostudy.ru/timemap.html
 """
 
-HELP_TEXT_SPEECH = """Здравствуйте. Вас приветствует компания МГТС. Меня зовут Евгений.
-(…длинный текст оставлен как есть…)"""
 
 # ───────────────────────────── ВСПОМОГАТЕЛЬНОЕ ───────────────────────────────
 def format_kyiv_time(ts: str) -> str:
@@ -382,7 +381,15 @@ async def links_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await help_menu(update, ctx)
 
 async def speech_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(HELP_TEXT_SPEECH)
+    raw = await db.get_setting("speech_text") or ""
+    if not raw:
+        raw = "Спич пуст."
+    chunks = [raw[i : i + 4096] for i in range(0, len(raw), 4096)]
+    for chunk in chunks:
+        try:
+            await update.message.reply_text(chunk)
+        except BadRequest as e:
+            log.warning("Failed to send speech chunk: %s", e)
     await help_menu(update, ctx)
 
 async def crm_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -435,6 +442,24 @@ async def edit_crm_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     await db.set_setting("crm_text", txt)
     await update.message.reply_text("✅ CRM сохранена.",
                                     reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True))
+    return ConversationHandler.END
+
+# — Изменить спич —
+async def edit_speech_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.effective_user.id not in ADMIN_IDS:
+        return ConversationHandler.END
+    await update.message.reply_text("Введите весь текст спича:", reply_markup=CANCEL_KEYBOARD)
+    return STATE_SPEECH_EDIT
+
+async def edit_speech_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    txt = update.message.text
+    if txt == "Отмена":
+        return await cancel(update, ctx)
+    await db.set_setting("speech_text", txt)
+    await update.message.reply_text(
+        "✅ Спич сохранён.",
+        reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True),
+    )
     return ConversationHandler.END
 
 # — Админские разделы —
@@ -716,6 +741,13 @@ def main():
                    MessageHandler(filters.Regex("^Отмена$"), cancel)],
     )
 
+    conv_speech = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^Изменить спич$"), edit_speech_start)],
+        states={STATE_SPEECH_EDIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_speech_save)]},
+        fallbacks=[CommandHandler("cancel", cancel),
+                   MessageHandler(filters.Regex("^Отмена$"), cancel)],
+    )
+
     conv_feedback = ConversationHandler(
         entry_points=[CallbackQueryHandler(init_feedback, pattern=r"^feedback:\d+$")],
         states={STATE_FEEDBACK_TEXT: [
@@ -733,6 +765,7 @@ def main():
     app.add_handler(conv_archive)
     app.add_handler(conv_stats)
     app.add_handler(conv_crm)
+    app.add_handler(conv_speech)
     app.add_handler(conv_feedback)
 
     # Команды/меню
