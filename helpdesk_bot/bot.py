@@ -47,19 +47,13 @@ log = logging.getLogger("helpdesk_bot")
 
 # ───────────────────────────── НАСТРОЙКИ ──────────────────────────────────────
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-ADMIN_CHAT_ID  = int(os.getenv("ADMIN_CHAT_ID", "0"))
 
-# Добавь нужные ID сюда (можно расширять)
-ADMIN_IDS = {
-    ADMIN_CHAT_ID,
-    7615248486,   # второй админ
-    7923988594,   # третий админ
-    8237445057,
-}
-ALL_ADMINS = [a for a in ADMIN_IDS if a]  # уберём нули, если переменная пустая
+# Загружаем список ID администраторов из переменной окружения
+ADMIN_IDS = {int(a) for a in os.getenv("ADMIN_IDS", "").split(",") if a}
+ALL_ADMINS = list(ADMIN_IDS)
 
-if not TELEGRAM_TOKEN or not ALL_ADMINS:
-    raise RuntimeError("TELEGRAM_TOKEN или ADMIN_CHAT_ID(ы) не установлены")
+if not TELEGRAM_TOKEN or not ADMIN_IDS:
+    raise RuntimeError("TELEGRAM_TOKEN или ADMIN_IDS не установлены")
 
 
 def is_admin(user_id: int) -> bool:
