@@ -7,6 +7,7 @@ from pathlib import Path
 DB_PATH = "tickets.db"
 
 CRM_PATH = Path(__file__).resolve().parent / "data" / "default_crm.txt"
+SPEECH_PATH = Path(__file__).resolve().parent / "data" / "default_speech.txt"
 
 _conn: aiosqlite.Connection | None = None
 log = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ async def init_db():
     """
     Создаёт таблицы tickets, users и settings, если их нет,
     и добавляет недостающие колонки в tickets.
-    Также устанавливает дефолтный текст CRM в settings.
+    Также устанавливает дефолтные тексты CRM и спича в settings.
     """
     conn = await connect()
     # tickets
@@ -66,15 +67,20 @@ async def init_db():
             value TEXT
         )
     """)
-    # дефолтный CRM-текст
+    # дефолтные тексты CRM и спича
     try:
         default_crm = CRM_PATH.read_text(encoding="utf-8")
     except FileNotFoundError:
         log.error("CRM data file not found: %s", CRM_PATH)
         default_crm = ""
-    await conn.execute(
+    try:
+        default_speech = SPEECH_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        log.error("Speech data file not found: %s", SPEECH_PATH)
+        default_speech = ""
+    await conn.executemany(
         "INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)",
-        ("crm_text", default_crm)
+        [("crm_text", default_crm), ("speech_text", default_speech)],
     )
     await conn.commit()
 
