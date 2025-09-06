@@ -12,6 +12,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
+from telegram.error import BadRequest
 from telegram.ext import (
     Application,              # v21
     CommandHandler,
@@ -397,7 +398,24 @@ async def crm_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             lines.append(f"{name} ({team}) {code}")
         else:
             lines.append(ln)
-    await update.message.reply_text("\n".join(lines) if lines else "CRM пуста.")
+    chunks = []
+    if lines:
+        cur = ""
+        for ln in lines:
+            if len(cur) + len(ln) + 1 > 4096:
+                chunks.append(cur.rstrip())
+                cur = ln + "\n"
+            else:
+                cur += ln + "\n"
+        if cur:
+            chunks.append(cur.rstrip())
+    else:
+        chunks = ["CRM пуста."]
+    for chunk in chunks:
+        try:
+            await update.message.reply_text(chunk)
+        except BadRequest as e:
+            log.warning("Failed to send CRM chunk: %s", e)
     await help_menu(update, ctx)
 
 async def back_to_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
