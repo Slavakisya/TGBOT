@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import re
 import logging
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -49,7 +50,9 @@ log = logging.getLogger("helpdesk_bot")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 # Загружаем список ID администраторов из переменной окружения
-ADMIN_IDS = {int(a) for a in os.getenv("ADMIN_IDS", "").split(",") if a}
+ADMIN_IDS = {
+    int(a) for a in re.split(r"[,\s]+", os.getenv("ADMIN_IDS", "")) if a
+}
 ALL_ADMINS = list(ADMIN_IDS)
 
 if not TELEGRAM_TOKEN or not ADMIN_IDS:
