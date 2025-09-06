@@ -23,11 +23,11 @@ from telegram.ext import (
 
 import db  # ваш локальный модуль рядом с bot.py
 
-# startup-хук: подключаем БД, отключаем webhook и печатаем кто мы
+# startup-хук: подключаем БД, инициализируем её, отключаем webhook и печатаем кто мы
 async def on_startup(app):
-    await app.bot.delete_webhook(drop_pending_updates=True)
     app.bot_data["db_conn"] = await db.connect()
     await db.init_db()
+    await app.bot.delete_webhook(drop_pending_updates=True)
     me = await app.bot.get_me()
     logging.getLogger("helpdesk_bot").info(
         f"✅ Logged in as @{me.username} ({me.id}). Polling…"
