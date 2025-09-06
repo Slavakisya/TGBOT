@@ -23,13 +23,19 @@ from telegram.ext import (
 
 import db  # ваш локальный модуль рядом с bot.py
 
-# startup-хук: отключаем webhook и печатаем кто мы
+# startup-хук: подключаем БД, отключаем webhook и печатаем кто мы
 async def on_startup(app):
     await app.bot.delete_webhook(drop_pending_updates=True)
+    app.bot_data["db_conn"] = await db.connect()
+    await db.init_db()
     me = await app.bot.get_me()
     logging.getLogger("helpdesk_bot").info(
         f"✅ Logged in as @{me.username} ({me.id}). Polling…"
     )
+
+
+async def on_shutdown(app):
+    await db.close()
 
 # логи
 logging.basicConfig(
@@ -163,7 +169,6 @@ def format_kyiv_time(ts: str) -> str:
 
 # ───────────────────────────── HANDLERS ───────────────────────────────────────
 async def start_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await db.init_db()
     u = update.effective_user
     await db.add_user(u.id, u.full_name)
     menu = ADMIN_MAIN_MENU if u.id in ADMIN_IDS else USER_MAIN_MENU
@@ -635,6 +640,7 @@ def main():
            .builder()
            .token(TELEGRAM_TOKEN)
            .post_init(on_startup)
+           .post_shutdown(on_shutdown)
            .build())
     # Conversations
     conv_ticket = ConversationHandler(
