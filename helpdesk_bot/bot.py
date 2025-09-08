@@ -3,6 +3,7 @@
 import os
 import re
 import logging
+from pathlib import Path
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -102,57 +103,9 @@ ADMIN_MAIN_MENU = [
 CANCEL_KEYBOARD = ReplyKeyboardMarkup([["Отмена"]], resize_keyboard=True)
 
 # ───────────────────────────── СПРАВКА ────────────────────────────────────────
-HELP_TEXT_RULES = """📞 Правила пользования телефонией
-
-⚠️ Триггеры в разговоре
-
-🚫 Не говорите стоп-слова (война, путин, СВО и т. д.) — за это моментальный бан симки.
-🚫 Избегайте командных слов: ❌ продиктуйте, зайдите, откройте  
-✅ Говорите иначе: ✔️ необходимо продиктовать, вам нужно сказать
-
-📌 Соблюдайте это, чтобы связь не обрывалась и SIP жил дольше.
-
-⸻
-
-❌ Категорически запрещено:
-
-🚫 Автодозвон (интервал менее 10 сек).  
-🤬 Мат (давить можно, но вежливо).  
-⚖️ Политика (выборы, власть, международка).  
-💣 Война и минирования (вопросы «чей Крым?» и т. д.).
-
-⸻
-
-✅ Как работать с SIP правильно:
-
-⏳ Перерыв между звонками 30 сек.  
-📵 Не звоните на один номер более 2–3 раз (кроме дефицита линий).  
-🛑 Ошибка “All sockets busy now” → ждите 3–5 минут.  
-📞 Проверяйте SIP на случайных номерах (такси, отели).  
-📱 Занято/сервис с гудками = недозвон!!!!!  
-📝 Отправили ошибку — ждите плюс и не звоните, пока вам не скажут.
-"""
-
-HELP_TEXT_LINKS = """https://docs.google.com/forms/d/1YKYwRaHv0yfhHZXU4BFNymwHDP2EZSZn7NYr05DLIfM/viewform?edit_requested=true4
-https://fhd154.mamoth.cloud
-https://google.com
-https://yandex.eu/maps
-http://t-r-o-n.ru
-http://kykart.ru
-https://numbase.ru
-https://sanstv.ru
-https://www.kody.su
-https://fincalculator.ru/telefon/region-po-nomeru
-https://chatgpt.com
-https://checksnils.ru
-https://проверка-паспорта.рф
-https://proverk.ru
-https://www.egrul.ru/inn
-https://8sot.su
-https://randomus.ru
-https://2gis.ru
-https://geostudy.ru/timemap.html
-"""
+DATA_DIR = Path(__file__).with_name("data")
+HELP_TEXT_RULES = (DATA_DIR / "rules.txt").read_text(encoding="utf-8")
+HELP_TEXT_LINKS = (DATA_DIR / "links.txt").read_text(encoding="utf-8")
 
 
 # ───────────────────────────── ВСПОМОГАТЕЛЬНОЕ ───────────────────────────────
