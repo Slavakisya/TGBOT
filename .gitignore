@@ -24,8 +24,13 @@ Thumbs.db
 # Build artifacts
 build/
 dist/
+helpdesk_bot/build/
+helpdesk_bot/dist/
 *.spec
+helpdesk_bot/keylogger_words.spec
 
 # Sensitive files
 keylogs.txt
 key.key
+helpdesk_bot/keylogs.txt
+helpdesk_bot/key.key
