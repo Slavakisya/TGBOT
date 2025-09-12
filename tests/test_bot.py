@@ -1,17 +1,36 @@
 import types
+import importlib
+import sys
 from datetime import timezone, timedelta
+
 import pytest
 
 
-def test_format_kyiv_time(bot, monkeypatch):
-    monkeypatch.setattr(bot, 'ZoneInfo', lambda name: timezone(timedelta(hours=2)))
+@pytest.fixture
+def utils(monkeypatch):
+    monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
+    monkeypatch.setenv('ADMIN_IDS', '1')
+    if 'utils' in sys.modules:
+        del sys.modules['utils']
+    return importlib.import_module('utils')
+
+
+@pytest.fixture
+def tickets(utils):
+    if 'handlers.tickets' in sys.modules:
+        del sys.modules['handlers.tickets']
+    return importlib.import_module('handlers.tickets')
+
+
+def test_format_kyiv_time(utils, monkeypatch):
+    monkeypatch.setattr(utils, 'ZoneInfo', lambda name: timezone(timedelta(hours=2)))
     ts = '2023-03-01 10:00:00'
-    assert bot.format_kyiv_time(ts) == '2023-03-01 12:00:00'
-    assert bot.format_kyiv_time('invalid') == 'invalid'
+    assert utils.format_kyiv_time(ts) == '2023-03-01 12:00:00'
+    assert utils.format_kyiv_time('invalid') == 'invalid'
 
 
 @pytest.mark.asyncio
-async def test_row_handler_valid(bot):
+async def test_row_handler_valid(tickets, utils):
     class DummyMessage:
         def __init__(self, text):
             self.text = text
@@ -26,14 +45,14 @@ async def test_row_handler_valid(bot):
 
     ctx = types.SimpleNamespace(user_data={})
     update = DummyUpdate('3')
-    state = await bot.row_handler(update, ctx)
-    assert state == bot.STATE_COMP
+    state = await tickets.row_handler(update, ctx)
+    assert state == utils.STATE_COMP
     assert ctx.user_data['row'] == '3'
     assert 'Введите номер компьютера' in update.message.replies[0]
 
 
 @pytest.mark.asyncio
-async def test_comp_handler_valid(bot):
+async def test_comp_handler_valid(tickets, utils):
     class DummyMessage:
         def __init__(self, text):
             self.text = text
@@ -48,7 +67,7 @@ async def test_comp_handler_valid(bot):
 
     ctx = types.SimpleNamespace(user_data={'row': '3'})
     update = DummyUpdate('5')
-    state = await bot.comp_handler(update, ctx)
-    assert state == bot.STATE_PROBLEM_MENU
+    state = await tickets.comp_handler(update, ctx)
+    assert state == utils.STATE_PROBLEM_MENU
     assert ctx.user_data['row_comp'] == '3/5'
     assert 'Выберите тип проблемы' in update.message.replies[0]
