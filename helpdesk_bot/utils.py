@@ -58,8 +58,17 @@ ADMIN_MAIN_MENU = [
 CANCEL_KEYBOARD = ReplyKeyboardMarkup([["Отмена"]], resize_keyboard=True)
 
 DATA_DIR = Path(__file__).with_name("data")
-HELP_TEXT_RULES = (DATA_DIR / "rules.txt").read_text(encoding="utf-8")
-HELP_TEXT_LINKS = (DATA_DIR / "links.txt").read_text(encoding="utf-8")
+try:
+    HELP_TEXT_RULES = (DATA_DIR / "rules.txt").read_text(encoding="utf-8")
+except FileNotFoundError:
+    log.warning("rules.txt not found in %s", DATA_DIR)
+    HELP_TEXT_RULES = "Файл rules.txt не найден."
+
+try:
+    HELP_TEXT_LINKS = (DATA_DIR / "links.txt").read_text(encoding="utf-8")
+except FileNotFoundError:
+    log.warning("links.txt not found in %s", DATA_DIR)
+    HELP_TEXT_LINKS = "Файл links.txt не найден."
 
 
 def format_kyiv_time(ts: str) -> str:
