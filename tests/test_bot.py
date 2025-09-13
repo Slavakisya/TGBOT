@@ -2,6 +2,8 @@ import types
 import importlib
 import sys
 from datetime import timezone, timedelta
+from pathlib import Path
+import logging
 
 import pytest
 
@@ -20,6 +22,29 @@ def tickets(utils):
     if 'helpdesk_bot.handlers.tickets' in sys.modules:
         del sys.modules['helpdesk_bot.handlers.tickets']
     return importlib.import_module('helpdesk_bot.handlers.tickets')
+
+
+def test_help_text_files_missing(monkeypatch, caplog):
+    monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
+    monkeypatch.setenv('ADMIN_IDS', '1')
+
+    original_read = Path.read_text
+
+    def fake_read(self, *args, **kwargs):
+        if self.name in {'rules.txt', 'links.txt'}:
+            raise FileNotFoundError
+        return original_read(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'read_text', fake_read)
+    if 'helpdesk_bot.utils' in sys.modules:
+        del sys.modules['helpdesk_bot.utils']
+    with caplog.at_level(logging.WARNING, logger='helpdesk_bot'):
+        utils = importlib.import_module('helpdesk_bot.utils')
+
+    assert utils.HELP_TEXT_RULES == 'Файл rules.txt не найден.'
+    assert utils.HELP_TEXT_LINKS == 'Файл links.txt не найден.'
+    assert 'rules.txt not found' in caplog.text
+    assert 'links.txt not found' in caplog.text
 
 
 def test_format_kyiv_time(utils, monkeypatch):
