@@ -10,16 +10,16 @@ import pytest
 def utils(monkeypatch):
     monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
     monkeypatch.setenv('ADMIN_IDS', '1')
-    if 'utils' in sys.modules:
-        del sys.modules['utils']
-    return importlib.import_module('utils')
+    if 'helpdesk_bot.utils' in sys.modules:
+        del sys.modules['helpdesk_bot.utils']
+    return importlib.import_module('helpdesk_bot.utils')
 
 
 @pytest.fixture
 def tickets(utils):
-    if 'handlers.tickets' in sys.modules:
-        del sys.modules['handlers.tickets']
-    return importlib.import_module('handlers.tickets')
+    if 'helpdesk_bot.handlers.tickets' in sys.modules:
+        del sys.modules['helpdesk_bot.handlers.tickets']
+    return importlib.import_module('helpdesk_bot.handlers.tickets')
 
 
 def test_format_kyiv_time(utils, monkeypatch):

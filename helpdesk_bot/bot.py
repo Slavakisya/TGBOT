@@ -11,9 +11,9 @@ from telegram.ext import (
     filters,
 )
 
-import db
-from handlers import tickets, admin, help
-from utils import (
+from . import db
+from .handlers import tickets, admin, help
+from .utils import (
     TELEGRAM_TOKEN,
     STATE_ROW,
     STATE_COMP,
