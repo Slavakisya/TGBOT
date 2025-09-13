@@ -28,9 +28,16 @@ from utils import (
     STATE_FEEDBACK_TEXT,
 )
 
+# Re-export commonly used handlers/constants for test compatibility
+PROBLEMS = tickets.PROBLEMS
+row_handler = tickets.row_handler
+comp_handler = tickets.comp_handler
+problem_menu_handler = tickets.problem_menu_handler
+custom_desc_handler = tickets.custom_desc_handler
+clear_requests_admin = admin.clear_requests_admin
+
 
 async def on_startup(app):
-    app.bot_data["db_conn"] = await db.connect()
     await db.init_db()
     await app.bot.delete_webhook(drop_pending_updates=True)
     me = await app.bot.get_me()
@@ -40,7 +47,7 @@ async def on_startup(app):
 
 
 async def on_shutdown(app):
-    await db.close()
+    pass
 
 
 logging.basicConfig(

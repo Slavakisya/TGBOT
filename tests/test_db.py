@@ -1,22 +1,23 @@
 import pytest
+import aiosqlite
 import db
 
 
 @pytest.mark.asyncio
 async def test_init_db_creates_tables_and_settings(temp_db):
     await db.init_db()
-    conn = await db.connect()
-    cur = await conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    tables = {r[0] for r in await cur.fetchall()}
-    assert {'tickets', 'users', 'settings'} <= tables
+    async with aiosqlite.connect(db.DB_PATH) as conn:
+        cur = await conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = {r[0] for r in await cur.fetchall()}
+        assert {'tickets', 'users', 'settings'} <= tables
 
-    cur = await conn.execute("PRAGMA table_info(tickets)")
-    cols = {r[1] for r in await cur.fetchall()}
-    assert {'row_comp', 'problem', 'description', 'user_name', 'user_id', 'status', 'created_at'} <= cols
+        cur = await conn.execute("PRAGMA table_info(tickets)")
+        cols = {r[1] for r in await cur.fetchall()}
+        assert {'row_comp', 'problem', 'description', 'user_name', 'user_id', 'status', 'created_at'} <= cols
 
-    cur = await conn.execute("SELECT key FROM settings")
-    settings = {r[0] for r in await cur.fetchall()}
-    assert {'crm_text', 'speech_text'} <= settings
+        cur = await conn.execute("SELECT key FROM settings")
+        settings = {r[0] for r in await cur.fetchall()}
+        assert {'crm_text', 'speech_text'} <= settings
 
 
 @pytest.mark.asyncio

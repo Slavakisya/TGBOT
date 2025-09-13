@@ -11,11 +11,10 @@ import db
 
 
 @pytest_asyncio.fixture
-async def temp_db(tmp_path):
-    db.DB_PATH = str(tmp_path / 'tickets.db')
-    db._conn = None
+async def temp_db(tmp_path, monkeypatch):
+    monkeypatch.setenv('HELPDESK_DB_PATH', str(tmp_path / 'tickets.db'))
+    importlib.reload(db)
     yield
-    await db.close()
 
 
 @pytest.fixture
