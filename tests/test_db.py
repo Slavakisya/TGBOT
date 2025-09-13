@@ -1,6 +1,6 @@
 import pytest
 import aiosqlite
-import db
+from helpdesk_bot import db
 
 
 @pytest.mark.asyncio

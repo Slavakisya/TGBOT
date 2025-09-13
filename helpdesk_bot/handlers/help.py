@@ -2,8 +2,8 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
-import db
-from utils import HELP_TEXT_RULES, HELP_TEXT_LINKS, log
+from .. import db
+from ..utils import HELP_TEXT_RULES, HELP_TEXT_LINKS, log
 from . import tickets
 
 

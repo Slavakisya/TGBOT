@@ -4,10 +4,10 @@ import importlib
 import pytest
 import pytest_asyncio
 
-# Add project module directory to sys.path
-sys.path.append(str(Path(__file__).resolve().parent.parent / 'helpdesk_bot'))
+# Add project root to sys.path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-import db
+from helpdesk_bot import db
 
 
 @pytest_asyncio.fixture
@@ -21,6 +21,6 @@ async def temp_db(tmp_path, monkeypatch):
 def bot(monkeypatch):
     monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
     monkeypatch.setenv('ADMIN_IDS', '1')
-    if 'bot' in sys.modules:
-        del sys.modules['bot']
-    return importlib.import_module('bot')
+    if 'helpdesk_bot.bot' in sys.modules:
+        del sys.modules['helpdesk_bot.bot']
+    return importlib.import_module('helpdesk_bot.bot')

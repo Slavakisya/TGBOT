@@ -1,8 +1,8 @@
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
-import db
-from utils import (
+from .. import db
+from ..utils import (
     ADMIN_IDS,
     ADMIN_MAIN_MENU,
     STATUS_OPTIONS,
