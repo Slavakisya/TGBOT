@@ -65,7 +65,8 @@ HELP_TEXT_LINKS = (DATA_DIR / "links.txt").read_text(encoding="utf-8")
 def format_kyiv_time(ts: str) -> str:
     try:
         dt = datetime.fromisoformat(ts).replace(tzinfo=timezone.utc)
-        return dt.astimezone(ZoneInfo("Europe/Kiev")).strftime("%Y-%m-%d %H:%M:%S")
+        # IANA tz database renamed Europe/Kiev to Europe/Kyiv in 2023
+        return dt.astimezone(ZoneInfo("Europe/Kyiv")).strftime("%Y-%m-%d %H:%M:%S")
     except Exception as e:
         log.warning("format_kyiv_time failed: %s", e)
         return ts

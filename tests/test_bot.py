@@ -23,9 +23,16 @@ def tickets(utils):
 
 
 def test_format_kyiv_time(utils, monkeypatch):
-    monkeypatch.setattr(utils, 'ZoneInfo', lambda name: timezone(timedelta(hours=2)))
+    captured = {}
+
+    def fake_zoneinfo(name):
+        captured['name'] = name
+        return timezone(timedelta(hours=2))
+
+    monkeypatch.setattr(utils, 'ZoneInfo', fake_zoneinfo)
     ts = '2023-03-01 10:00:00'
     assert utils.format_kyiv_time(ts) == '2023-03-01 12:00:00'
+    assert captured['name'] == 'Europe/Kyiv'
     assert utils.format_kyiv_time('invalid') == 'invalid'
 
 
