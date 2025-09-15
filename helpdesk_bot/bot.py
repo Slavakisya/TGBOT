@@ -93,7 +93,7 @@ def main():
     )
 
     conv_reply = ConversationHandler(
-        entry_points=[CallbackQueryHandler(admin.init_reply, pattern=r"^reply:\\d+$")],
+        entry_points=[CallbackQueryHandler(admin.init_reply, pattern=r"^reply:\d+$")],
         states={
             STATE_REPLY: [
                 MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
@@ -174,7 +174,7 @@ def main():
     )
 
     conv_feedback = ConversationHandler(
-        entry_points=[CallbackQueryHandler(tickets.init_feedback, pattern=r"^feedback:\\d+$")],
+        entry_points=[CallbackQueryHandler(tickets.init_feedback, pattern=r"^feedback:\d+$")],
         states={
             STATE_FEEDBACK_TEXT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, tickets.handle_feedback_text),
@@ -210,10 +210,10 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^Очистить все запросы$"), admin.clear_requests_admin))
     app.add_handler(MessageHandler(filters.Regex("^Благодарности$"), admin.show_thanks_count))
 
-    app.add_handler(CallbackQueryHandler(tickets.show_request, pattern=r"^show:\\d+$"))
-    app.add_handler(CallbackQueryHandler(tickets.cancel_request_callback, pattern=r"^cancel_req:\\d+$"))
-    app.add_handler(CallbackQueryHandler(admin.status_callback, pattern=r"^status:\\d+:"))
-    app.add_handler(CallbackQueryHandler(admin.handle_thanks, pattern=r"^thanks:\\d+$"))
+    app.add_handler(CallbackQueryHandler(tickets.show_request, pattern=r"^show:\d+$"))
+    app.add_handler(CallbackQueryHandler(tickets.cancel_request_callback, pattern=r"^cancel_req:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin.status_callback, pattern=r"^status:\d+:"))
+    app.add_handler(CallbackQueryHandler(admin.handle_thanks, pattern=r"^thanks:\d+$"))
 
     log.info("🚀 Bot starting polling…")
     app.run_polling(close_loop=False)
