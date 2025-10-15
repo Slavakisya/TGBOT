@@ -77,6 +77,8 @@ async def init_db():
                 ("speech_text", default_speech),
                 ("daily_message_text", ""),
                 ("daily_message_chat_id", ""),
+                ("daily_message_parse_mode", ""),
+                ("daily_message_disable_preview", "0"),
             ],
         )
         await conn.commit()

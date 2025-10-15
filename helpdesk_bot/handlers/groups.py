@@ -6,7 +6,7 @@ from ..utils import log
 
 
 async def bot_member_update(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Track the group chat for the daily broadcast when the bot is added or removed."""
+    """Track the group chat for the daily reminder when the bot is added or removed."""
     chat = update.effective_chat
     member = update.my_chat_member
     if not chat or not member:

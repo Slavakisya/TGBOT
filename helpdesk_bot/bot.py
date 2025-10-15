@@ -25,13 +25,15 @@ from .utils import (
     STATE_PROBLEM_MENU,
     STATE_CUSTOM_DESC,
     STATE_REPLY,
-    STATE_BROADCAST,
     STATE_ARCHIVE_DATE,
     STATE_STATS_DATE,
     STATE_CRM_EDIT,
     STATE_SPEECH_EDIT,
+    STATE_DAILY_MESSAGE_MENU,
     STATE_DAILY_MESSAGE_EDIT,
+    STATE_DAILY_MESSAGE_FORMAT,
     STATE_FEEDBACK_TEXT,
+    ADMIN_BACK_BUTTON,
 )
 
 # Re-export commonly used handlers/constants for test compatibility
@@ -51,8 +53,18 @@ async def send_daily_message(context: ContextTypes.DEFAULT_TYPE):
     message = await db.get_setting("daily_message_text")
     if not chat_id or not message:
         return
+
+    parse_mode = await db.get_setting("daily_message_parse_mode") or ""
+    disable_preview = await db.get_setting("daily_message_disable_preview") or "0"
+    disable_preview_flag = disable_preview == "1"
+
     try:
-        await context.bot.send_message(int(chat_id), message)
+        await context.bot.send_message(
+            int(chat_id),
+            message,
+            parse_mode=parse_mode or None,
+            disable_web_page_preview=disable_preview_flag,
+        )
     except Exception as exc:  # pragma: no cover - runtime network issues
         log.warning(
             "Не удалось отправить ежедневное сообщение в чат %s: %s", chat_id, exc
@@ -132,29 +144,15 @@ def main():
         entry_points=[CallbackQueryHandler(admin.init_reply, pattern=r"^reply:\d+$")],
         states={
             STATE_REPLY: [
-                MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
+                MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin.handle_reply),
             ]
         },
         fallbacks=[
-            CommandHandler("cancel", tickets.cancel),
-            MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
+            CommandHandler("cancel", admin.cancel),
+            MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
         ],
         per_message=True,
-    )
-
-    conv_broadcast = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^Отправить всем сообщение$"), admin.init_broadcast)],
-        states={
-            STATE_BROADCAST: [
-                MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin.handle_broadcast),
-            ]
-        },
-        fallbacks=[
-            CommandHandler("cancel", tickets.cancel),
-            MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
-        ],
     )
 
     conv_archive = ConversationHandler(
@@ -166,8 +164,8 @@ def main():
             ],
         },
         fallbacks=[
-            CommandHandler("cancel", tickets.cancel),
-            MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
+            CommandHandler("cancel", admin.cancel),
+            MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
         ],
     )
 
@@ -179,8 +177,8 @@ def main():
             ]
         },
         fallbacks=[
-            CommandHandler("cancel", tickets.cancel),
-            MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
+            CommandHandler("cancel", admin.cancel),
+            MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
         ],
     )
 
@@ -192,8 +190,8 @@ def main():
             ]
         },
         fallbacks=[
-            CommandHandler("cancel", tickets.cancel),
-            MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
+            CommandHandler("cancel", admin.cancel),
+            MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
         ],
     )
 
@@ -205,8 +203,39 @@ def main():
             ]
         },
         fallbacks=[
-            CommandHandler("cancel", tickets.cancel),
-            MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
+            CommandHandler("cancel", admin.cancel),
+            MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
+        ],
+    )
+
+    conv_daily_message = ConversationHandler(
+        entry_points=[
+            MessageHandler(
+                filters.Regex("^Ежедневное сообщение$"), admin.daily_message_start
+            )
+        ],
+        states={
+            STATE_DAILY_MESSAGE_MENU: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND, admin.daily_message_menu
+                )
+            ],
+            STATE_DAILY_MESSAGE_EDIT: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    admin.daily_message_save,
+                )
+            ],
+            STATE_DAILY_MESSAGE_FORMAT: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    admin.daily_message_set_format,
+                )
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancel", admin.cancel),
+            MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
         ],
     )
 
@@ -247,7 +276,6 @@ def main():
 
     app.add_handler(conv_ticket)
     app.add_handler(conv_reply)
-    app.add_handler(conv_broadcast)
     app.add_handler(conv_archive)
     app.add_handler(conv_stats)
     app.add_handler(conv_crm)
@@ -264,6 +292,13 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^Спич$"), help.speech_handler))
     app.add_handler(MessageHandler(filters.Regex("^CRM$"), help.crm_handler))
     app.add_handler(MessageHandler(filters.Regex("^Назад$"), help.back_to_main))
+
+    app.add_handler(MessageHandler(filters.Regex("^Заявки$"), admin.show_tickets_menu))
+    app.add_handler(MessageHandler(filters.Regex("^Аналитика$"), admin.show_analytics_menu))
+    app.add_handler(MessageHandler(filters.Regex("^Настройки$"), admin.show_settings_menu))
+    app.add_handler(
+        MessageHandler(filters.Regex(f"^{ADMIN_BACK_BUTTON}$"), admin.back_to_main)
+    )
 
     app.add_handler(MessageHandler(filters.Regex("^Все запросы$"), admin.all_requests_cmd))
     app.add_handler(MessageHandler(filters.Regex("^Очистить все запросы$"), admin.clear_requests_admin))

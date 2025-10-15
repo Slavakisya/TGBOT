@@ -331,17 +331,42 @@ async def test_daily_message_admin_flow(monkeypatch, tmp_path):
     ctx = types.SimpleNamespace()
     update_start = DummyUpdate('start')
     state = await admin_mod.daily_message_start(update_start, ctx)
-    assert state == admin_mod.STATE_DAILY_MESSAGE_EDIT
+    assert state == admin_mod.STATE_DAILY_MESSAGE_MENU
     assert any('ежедневное сообщение' in msg.lower() for msg in update_start.message.replies)
 
+    update_menu = DummyUpdate('Изменить текст')
+    state = await admin_mod.daily_message_menu(update_menu, ctx)
+    assert state == admin_mod.STATE_DAILY_MESSAGE_EDIT
+    assert any('новый текст' in msg.lower() for msg in update_menu.message.replies)
+
     update_save = DummyUpdate('Новое напоминание')
-    await admin_mod.daily_message_save(update_save, ctx)
-    assert 'обновлено' in update_save.message.replies[0].lower()
+    state = await admin_mod.daily_message_save(update_save, ctx)
+    assert state == admin_mod.STATE_DAILY_MESSAGE_MENU
+    assert any('обновлено' in msg.lower() for msg in update_save.message.replies)
     assert await db_mod.get_setting('daily_message_text') == 'Новое напоминание'
 
+    update_format = DummyUpdate('Форматирование')
+    state = await admin_mod.daily_message_menu(update_format, ctx)
+    assert state == admin_mod.STATE_DAILY_MESSAGE_FORMAT
+
+    update_choose_format = DummyUpdate('Markdown')
+    state = await admin_mod.daily_message_set_format(update_choose_format, ctx)
+    assert state == admin_mod.STATE_DAILY_MESSAGE_MENU
+    assert await db_mod.get_setting('daily_message_parse_mode') == 'Markdown'
+
+    update_toggle_preview = DummyUpdate('Переключить предпросмотр')
+    state = await admin_mod.daily_message_menu(update_toggle_preview, ctx)
+    assert state == admin_mod.STATE_DAILY_MESSAGE_MENU
+    assert await db_mod.get_setting('daily_message_disable_preview') == '1'
+
+    update_menu_disable = DummyUpdate('Изменить текст')
+    state = await admin_mod.daily_message_menu(update_menu_disable, ctx)
+    assert state == admin_mod.STATE_DAILY_MESSAGE_EDIT
+
     update_disable = DummyUpdate('Пусто')
-    await admin_mod.daily_message_save(update_disable, ctx)
-    assert 'отключено' in update_disable.message.replies[0].lower()
+    state = await admin_mod.daily_message_save(update_disable, ctx)
+    assert state == admin_mod.STATE_DAILY_MESSAGE_MENU
+    assert any('отключено' in msg.lower() for msg in update_disable.message.replies)
     assert await db_mod.get_setting('daily_message_text') == ''
 
 
@@ -365,17 +390,19 @@ async def test_send_daily_message(monkeypatch, tmp_path):
 
     await db_mod.set_setting('daily_message_chat_id', '123')
     await db_mod.set_setting('daily_message_text', 'Привет')
+    await db_mod.set_setting('daily_message_parse_mode', 'Markdown')
+    await db_mod.set_setting('daily_message_disable_preview', '1')
 
     class DummyBot:
         def __init__(self):
             self.sent = []
 
-        async def send_message(self, chat_id, text):
-            self.sent.append((chat_id, text))
+        async def send_message(self, chat_id, text, parse_mode=None, disable_web_page_preview=None):
+            self.sent.append((chat_id, text, parse_mode, disable_web_page_preview))
 
     ctx = types.SimpleNamespace(bot=DummyBot())
     await bot_mod.send_daily_message(ctx)
-    assert ctx.bot.sent == [(123, 'Привет')]
+    assert ctx.bot.sent == [(123, 'Привет', 'Markdown', True)]
 
     ctx.bot.sent.clear()
     await db_mod.set_setting('daily_message_text', '')

@@ -288,8 +288,11 @@ async def handle_feedback_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
 
 
 async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    menu = USER_MAIN_MENU
+    if update.effective_user and update.effective_user.id in ADMIN_IDS:
+        menu = ADMIN_MAIN_MENU
     await update.message.reply_text(
         "❌ Отменено.",
-        reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True),
+        reply_markup=ReplyKeyboardMarkup(menu, resize_keyboard=True),
     )
     return ConversationHandler.END
