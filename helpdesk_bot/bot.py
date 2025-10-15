@@ -239,6 +239,26 @@ def main():
         ],
     )
 
+    conv_daily_message = ConversationHandler(
+        entry_points=[
+            MessageHandler(
+                filters.Regex("^Ежедневное сообщение$"), admin.daily_message_start
+            )
+        ],
+        states={
+            STATE_DAILY_MESSAGE_EDIT: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    admin.daily_message_save,
+                )
+            ]
+        },
+        fallbacks=[
+            CommandHandler("cancel", tickets.cancel),
+            MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
+        ],
+    )
+
     conv_feedback = ConversationHandler(
         entry_points=[CallbackQueryHandler(tickets.init_feedback, pattern=r"^feedback:\d+$")],
         states={
