@@ -292,3 +292,119 @@ async def test_clear_requests_admin_unauthorized(bot, monkeypatch):
     await bot.clear_requests_admin(update, ctx)
     assert called is False
     assert ctx.bot.sent == []
+
+
+@pytest.mark.asyncio
+async def test_daily_message_admin_flow(monkeypatch, tmp_path):
+    monkeypatch.setenv('HELPDESK_DB_PATH', str(tmp_path / 'tickets.db'))
+    monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
+    monkeypatch.setenv('ADMIN_IDS', '1')
+
+    for name in [
+        'helpdesk_bot.db',
+        'helpdesk_bot.utils',
+        'helpdesk_bot.handlers.admin',
+    ]:
+        sys.modules.pop(name, None)
+
+    db_mod = importlib.import_module('helpdesk_bot.db')
+    await db_mod.init_db()
+    admin_mod = importlib.import_module('helpdesk_bot.handlers.admin')
+
+    class DummyMessage:
+        def __init__(self, text):
+            self.text = text
+            self.replies = []
+
+        async def reply_text(self, text, reply_markup=None):
+            self.replies.append(text)
+
+    class DummyUser:
+        def __init__(self, user_id):
+            self.id = user_id
+
+    class DummyUpdate:
+        def __init__(self, text):
+            self.message = DummyMessage(text)
+            self.effective_user = DummyUser(1)
+
+    ctx = types.SimpleNamespace()
+    update_start = DummyUpdate('start')
+    state = await admin_mod.daily_message_start(update_start, ctx)
+    assert state == admin_mod.STATE_DAILY_MESSAGE_MENU
+    assert any('ежедневное сообщение' in msg.lower() for msg in update_start.message.replies)
+
+    update_menu = DummyUpdate('Изменить текст')
+    state = await admin_mod.daily_message_menu(update_menu, ctx)
+    assert state == admin_mod.STATE_DAILY_MESSAGE_EDIT
+    assert any('новый текст' in msg.lower() for msg in update_menu.message.replies)
+
+    update_save = DummyUpdate('Новое напоминание')
+    state = await admin_mod.daily_message_save(update_save, ctx)
+    assert state == admin_mod.STATE_DAILY_MESSAGE_MENU
+    assert any('обновлено' in msg.lower() for msg in update_save.message.replies)
+    assert await db_mod.get_setting('daily_message_text') == 'Новое напоминание'
+
+    update_format = DummyUpdate('Форматирование')
+    state = await admin_mod.daily_message_menu(update_format, ctx)
+    assert state == admin_mod.STATE_DAILY_MESSAGE_FORMAT
+
+    update_choose_format = DummyUpdate('Markdown')
+    state = await admin_mod.daily_message_set_format(update_choose_format, ctx)
+    assert state == admin_mod.STATE_DAILY_MESSAGE_MENU
+    assert await db_mod.get_setting('daily_message_parse_mode') == 'Markdown'
+
+    update_toggle_preview = DummyUpdate('Переключить предпросмотр')
+    state = await admin_mod.daily_message_menu(update_toggle_preview, ctx)
+    assert state == admin_mod.STATE_DAILY_MESSAGE_MENU
+    assert await db_mod.get_setting('daily_message_disable_preview') == '1'
+
+    update_menu_disable = DummyUpdate('Изменить текст')
+    state = await admin_mod.daily_message_menu(update_menu_disable, ctx)
+    assert state == admin_mod.STATE_DAILY_MESSAGE_EDIT
+
+    update_disable = DummyUpdate('Пусто')
+    state = await admin_mod.daily_message_save(update_disable, ctx)
+    assert state == admin_mod.STATE_DAILY_MESSAGE_MENU
+    assert any('отключено' in msg.lower() for msg in update_disable.message.replies)
+    assert await db_mod.get_setting('daily_message_text') == ''
+
+
+@pytest.mark.asyncio
+async def test_send_daily_message(monkeypatch, tmp_path):
+    monkeypatch.setenv('HELPDESK_DB_PATH', str(tmp_path / 'tickets.db'))
+    monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
+    monkeypatch.setenv('ADMIN_IDS', '1')
+
+    for name in [
+        'helpdesk_bot.db',
+        'helpdesk_bot.utils',
+        'helpdesk_bot.handlers.admin',
+        'helpdesk_bot.bot',
+    ]:
+        sys.modules.pop(name, None)
+
+    db_mod = importlib.import_module('helpdesk_bot.db')
+    await db_mod.init_db()
+    bot_mod = importlib.import_module('helpdesk_bot.bot')
+
+    await db_mod.set_setting('daily_message_chat_id', '123')
+    await db_mod.set_setting('daily_message_text', 'Привет')
+    await db_mod.set_setting('daily_message_parse_mode', 'Markdown')
+    await db_mod.set_setting('daily_message_disable_preview', '1')
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, parse_mode=None, disable_web_page_preview=None):
+            self.sent.append((chat_id, text, parse_mode, disable_web_page_preview))
+
+    ctx = types.SimpleNamespace(bot=DummyBot())
+    await bot_mod.send_daily_message(ctx)
+    assert ctx.bot.sent == [(123, 'Привет', 'Markdown', True)]
+
+    ctx.bot.sent.clear()
+    await db_mod.set_setting('daily_message_text', '')
+    await bot_mod.send_daily_message(ctx)
+    assert ctx.bot.sent == []
