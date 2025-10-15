@@ -72,7 +72,12 @@ async def init_db():
             default_speech = ""
         await conn.executemany(
             "INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)",
-            [("crm_text", default_crm), ("speech_text", default_speech)],
+            [
+                ("crm_text", default_crm),
+                ("speech_text", default_speech),
+                ("daily_message_text", ""),
+                ("daily_message_chat_id", ""),
+            ],
         )
         await conn.commit()
 

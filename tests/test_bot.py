@@ -292,3 +292,92 @@ async def test_clear_requests_admin_unauthorized(bot, monkeypatch):
     await bot.clear_requests_admin(update, ctx)
     assert called is False
     assert ctx.bot.sent == []
+
+
+@pytest.mark.asyncio
+async def test_daily_message_admin_flow(monkeypatch, tmp_path):
+    monkeypatch.setenv('HELPDESK_DB_PATH', str(tmp_path / 'tickets.db'))
+    monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
+    monkeypatch.setenv('ADMIN_IDS', '1')
+
+    for name in [
+        'helpdesk_bot.db',
+        'helpdesk_bot.utils',
+        'helpdesk_bot.handlers.admin',
+    ]:
+        sys.modules.pop(name, None)
+
+    db_mod = importlib.import_module('helpdesk_bot.db')
+    await db_mod.init_db()
+    admin_mod = importlib.import_module('helpdesk_bot.handlers.admin')
+
+    class DummyMessage:
+        def __init__(self, text):
+            self.text = text
+            self.replies = []
+
+        async def reply_text(self, text, reply_markup=None):
+            self.replies.append(text)
+
+    class DummyUser:
+        def __init__(self, user_id):
+            self.id = user_id
+
+    class DummyUpdate:
+        def __init__(self, text):
+            self.message = DummyMessage(text)
+            self.effective_user = DummyUser(1)
+
+    ctx = types.SimpleNamespace()
+    update_start = DummyUpdate('start')
+    state = await admin_mod.daily_message_start(update_start, ctx)
+    assert state == admin_mod.STATE_DAILY_MESSAGE_EDIT
+    assert any('ежедневное сообщение' in msg.lower() for msg in update_start.message.replies)
+
+    update_save = DummyUpdate('Новое напоминание')
+    await admin_mod.daily_message_save(update_save, ctx)
+    assert 'обновлено' in update_save.message.replies[0].lower()
+    assert await db_mod.get_setting('daily_message_text') == 'Новое напоминание'
+
+    update_disable = DummyUpdate('Пусто')
+    await admin_mod.daily_message_save(update_disable, ctx)
+    assert 'отключено' in update_disable.message.replies[0].lower()
+    assert await db_mod.get_setting('daily_message_text') == ''
+
+
+@pytest.mark.asyncio
+async def test_send_daily_message(monkeypatch, tmp_path):
+    monkeypatch.setenv('HELPDESK_DB_PATH', str(tmp_path / 'tickets.db'))
+    monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
+    monkeypatch.setenv('ADMIN_IDS', '1')
+
+    for name in [
+        'helpdesk_bot.db',
+        'helpdesk_bot.utils',
+        'helpdesk_bot.handlers.admin',
+        'helpdesk_bot.bot',
+    ]:
+        sys.modules.pop(name, None)
+
+    db_mod = importlib.import_module('helpdesk_bot.db')
+    await db_mod.init_db()
+    bot_mod = importlib.import_module('helpdesk_bot.bot')
+
+    await db_mod.set_setting('daily_message_chat_id', '123')
+    await db_mod.set_setting('daily_message_text', 'Привет')
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text):
+            self.sent.append((chat_id, text))
+
+    ctx = types.SimpleNamespace(bot=DummyBot())
+    await bot_mod.send_daily_message(ctx)
+    assert ctx.bot.sent == [(123, 'Привет')]
+
+    ctx.bot.sent.clear()
+    await db_mod.set_setting('daily_message_text', '')
+    await bot_mod.send_daily_message(ctx)
+    assert ctx.bot.sent == []

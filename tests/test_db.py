@@ -17,7 +17,7 @@ async def test_init_db_creates_tables_and_settings(temp_db):
 
         cur = await conn.execute("SELECT key FROM settings")
         settings = {r[0] for r in await cur.fetchall()}
-        assert {'crm_text', 'speech_text'} <= settings
+        assert {'crm_text', 'speech_text', 'daily_message_text', 'daily_message_chat_id'} <= settings
 
 
 @pytest.mark.asyncio
