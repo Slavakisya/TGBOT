@@ -33,8 +33,9 @@ def is_admin(user_id: int) -> bool:
     STATE_STATS_DATE,
     STATE_CRM_EDIT,
     STATE_SPEECH_EDIT,
+    STATE_DAILY_MESSAGE_EDIT,
     STATE_FEEDBACK_TEXT,
-) = range(11)
+) = range(12)
 
 PROBLEMS = [
     "Вопросы по тф",
@@ -53,7 +54,7 @@ USER_MAIN_MENU = [["Создать запрос", "Мои запросы"], ["С
 ADMIN_MAIN_MENU = [
     ["Все запросы", "Архив запросов", "Статистика"],
     ["Очистить все запросы", "Отправить всем сообщение", "Изменить CRM", "Изменить спич"],
-    ["Благодарности"],
+    ["Благодарности", "Ежедневное сообщение"],
 ]
 CANCEL_KEYBOARD = ReplyKeyboardMarkup([["Отмена"]], resize_keyboard=True)
 
