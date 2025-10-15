@@ -1,18 +1,23 @@
 # -*- coding: utf-8 -*-
 import logging
+from datetime import time
+
+from zoneinfo import ZoneInfo
 
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
+    ChatMemberHandler,
     ConversationHandler,
     ContextTypes,
+    JobQueue,
     filters,
 )
 
 from . import db
-from .handlers import tickets, admin, help
+from .handlers import tickets, admin, help, groups
 from .utils import (
     TELEGRAM_TOKEN,
     STATE_ROW,
@@ -25,6 +30,7 @@ from .utils import (
     STATE_STATS_DATE,
     STATE_CRM_EDIT,
     STATE_SPEECH_EDIT,
+    STATE_DAILY_MESSAGE_EDIT,
     STATE_FEEDBACK_TEXT,
 )
 
@@ -37,12 +43,40 @@ custom_desc_handler = tickets.custom_desc_handler
 clear_requests_admin = admin.clear_requests_admin
 
 
+DAILY_MESSAGE_TIME = time(hour=17, minute=0, tzinfo=ZoneInfo("Europe/Kyiv"))
+
+
+async def send_daily_message(context: ContextTypes.DEFAULT_TYPE):
+    chat_id = await db.get_setting("daily_message_chat_id")
+    message = await db.get_setting("daily_message_text")
+    if not chat_id or not message:
+        return
+    try:
+        await context.bot.send_message(int(chat_id), message)
+    except Exception as exc:  # pragma: no cover - runtime network issues
+        log.warning(
+            "Не удалось отправить ежедневное сообщение в чат %s: %s", chat_id, exc
+        )
+
+
 async def on_startup(app):
     await db.init_db()
     await app.bot.delete_webhook(drop_pending_updates=True)
     me = await app.bot.get_me()
     logging.getLogger("helpdesk_bot").info(
         f"✅ Logged in as @{me.username} ({me.id}). Polling…"
+    )
+    if app.job_queue is None:
+        log.error(
+            "Job queue is not configured – ежедневное сообщение отключено. "
+            "Установите зависимость python-telegram-bot[job-queue] или запускайте "
+            "бота через helpdesk_bot.bot.main()."
+        )
+        return
+    app.job_queue.run_daily(
+        send_daily_message,
+        time=DAILY_MESSAGE_TIME,
+        name="daily_message",
     )
 
 
@@ -58,9 +92,11 @@ log = logging.getLogger("helpdesk_bot")
 
 
 def main():
+    job_queue = JobQueue()
     app = (
         Application.builder()
         .token(TELEGRAM_TOKEN)
+        .job_queue(job_queue)
         .post_init(on_startup)
         .post_shutdown(on_shutdown)
         .build()
@@ -104,6 +140,7 @@ def main():
             CommandHandler("cancel", tickets.cancel),
             MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
         ],
+        per_message=True,
     )
 
     conv_broadcast = ConversationHandler(
@@ -173,6 +210,26 @@ def main():
         ],
     )
 
+    conv_daily_message = ConversationHandler(
+        entry_points=[
+            MessageHandler(
+                filters.Regex("^Ежедневное сообщение$"), admin.daily_message_start
+            )
+        ],
+        states={
+            STATE_DAILY_MESSAGE_EDIT: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    admin.daily_message_save,
+                )
+            ]
+        },
+        fallbacks=[
+            CommandHandler("cancel", tickets.cancel),
+            MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
+        ],
+    )
+
     conv_feedback = ConversationHandler(
         entry_points=[CallbackQueryHandler(tickets.init_feedback, pattern=r"^feedback:\d+$")],
         states={
@@ -185,6 +242,7 @@ def main():
             CommandHandler("cancel", tickets.cancel),
             MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
         ],
+        per_message=True,
     )
 
     app.add_handler(conv_ticket)
@@ -194,6 +252,7 @@ def main():
     app.add_handler(conv_stats)
     app.add_handler(conv_crm)
     app.add_handler(conv_speech)
+    app.add_handler(conv_daily_message)
     app.add_handler(conv_feedback)
 
     app.add_handler(CommandHandler("start", tickets.start_menu))
@@ -214,6 +273,11 @@ def main():
     app.add_handler(CallbackQueryHandler(tickets.cancel_request_callback, pattern=r"^cancel_req:\d+$"))
     app.add_handler(CallbackQueryHandler(admin.status_callback, pattern=r"^status:\d+:"))
     app.add_handler(CallbackQueryHandler(admin.handle_thanks, pattern=r"^thanks:\d+$"))
+    app.add_handler(
+        ChatMemberHandler(
+            groups.bot_member_update, ChatMemberHandler.MY_CHAT_MEMBER
+        )
+    )
 
     log.info("🚀 Bot starting polling…")
     app.run_polling(close_loop=False)

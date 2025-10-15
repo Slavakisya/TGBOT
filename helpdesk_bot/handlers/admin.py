@@ -17,6 +17,7 @@ from ..utils import (
     STATE_STATS_DATE,
     STATE_CRM_EDIT,
     STATE_SPEECH_EDIT,
+    STATE_DAILY_MESSAGE_EDIT,
 )
 
 
@@ -212,6 +213,46 @@ async def edit_speech_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> in
     await db.set_setting("speech_text", txt)
     await update.message.reply_text(
         "✅ Спич сохранён.",
+        reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True),
+    )
+    return ConversationHandler.END
+
+
+async def daily_message_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.effective_user.id not in ADMIN_IDS:
+        return ConversationHandler.END
+    current_text = await db.get_setting("daily_message_text") or ""
+    chat_id = await db.get_setting("daily_message_chat_id") or ""
+    lines = [
+        "Текущее ежедневное сообщение (17:00 по Киеву):",
+        current_text if current_text else "— не задано —",
+    ]
+    if chat_id:
+        lines.append(f"\nЧат для отправки: {chat_id}")
+    else:
+        lines.append(
+            "\nЧат для отправки не привязан. Добавьте бота администратором в нужную группу,"
+            " чтобы закрепить её."
+        )
+    lines.append("\nВведите новый текст сообщения. Отправьте «Пусто», чтобы отключить рассылку.")
+    await update.message.reply_text(
+        "\n".join(lines), reply_markup=CANCEL_KEYBOARD
+    )
+    return STATE_DAILY_MESSAGE_EDIT
+
+
+async def daily_message_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    txt = update.message.text.strip()
+    if txt.lower() == "пусто":
+        txt = ""
+    await db.set_setting("daily_message_text", txt)
+    reply = (
+        "✅ Ежедневное сообщение обновлено."
+        if txt
+        else "✅ Ежедневное сообщение отключено."
+    )
+    await update.message.reply_text(
+        reply,
         reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True),
     )
     return ConversationHandler.END
