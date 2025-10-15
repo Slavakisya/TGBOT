@@ -12,6 +12,7 @@ from telegram.ext import (
     ChatMemberHandler,
     ConversationHandler,
     ContextTypes,
+    JobQueue,
     filters,
 )
 
@@ -65,6 +66,13 @@ async def on_startup(app):
     logging.getLogger("helpdesk_bot").info(
         f"✅ Logged in as @{me.username} ({me.id}). Polling…"
     )
+    if app.job_queue is None:
+        log.error(
+            "Job queue is not configured – ежедневное сообщение отключено. "
+            "Установите зависимость python-telegram-bot[job-queue] или запускайте "
+            "бота через helpdesk_bot.bot.main()."
+        )
+        return
     app.job_queue.run_daily(
         send_daily_message,
         time=DAILY_MESSAGE_TIME,
@@ -84,9 +92,11 @@ log = logging.getLogger("helpdesk_bot")
 
 
 def main():
+    job_queue = JobQueue()
     app = (
         Application.builder()
         .token(TELEGRAM_TOKEN)
+        .job_queue(job_queue)
         .post_init(on_startup)
         .post_shutdown(on_shutdown)
         .build()
@@ -130,6 +140,7 @@ def main():
             CommandHandler("cancel", tickets.cancel),
             MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
         ],
+        per_message=True,
     )
 
     conv_broadcast = ConversationHandler(
@@ -231,6 +242,7 @@ def main():
             CommandHandler("cancel", tickets.cancel),
             MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
         ],
+        per_message=True,
     )
 
     app.add_handler(conv_ticket)
