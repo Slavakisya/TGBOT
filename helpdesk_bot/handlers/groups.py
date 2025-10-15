@@ -33,4 +33,3 @@ async def bot_member_update(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
         stored = await db.get_setting("daily_message_chat_id") or ""
         if stored == str(chat.id):
             await db.set_setting("daily_message_chat_id", "")
-*** End Patch
