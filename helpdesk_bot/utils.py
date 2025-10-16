@@ -28,13 +28,15 @@ def is_admin(user_id: int) -> bool:
     STATE_PROBLEM_MENU,
     STATE_CUSTOM_DESC,
     STATE_REPLY,
-    STATE_BROADCAST,
     STATE_ARCHIVE_DATE,
     STATE_STATS_DATE,
     STATE_CRM_EDIT,
     STATE_SPEECH_EDIT,
+    STATE_DAILY_MESSAGE_MENU,
+    STATE_DAILY_MESSAGE_EDIT,
+    STATE_DAILY_MESSAGE_FORMAT,
     STATE_FEEDBACK_TEXT,
-) = range(11)
+) = range(13)
 
 PROBLEMS = [
     "Вопросы по тф",
@@ -50,10 +52,43 @@ PROBLEMS = [
 
 STATUS_OPTIONS = ["принято", "в работе", "готово", "отменено"]
 USER_MAIN_MENU = [["Создать запрос", "Мои запросы"], ["Справка"]]
-ADMIN_MAIN_MENU = [
-    ["Все запросы", "Архив запросов", "Статистика"],
-    ["Очистить все запросы", "Отправить всем сообщение", "Изменить CRM", "Изменить спич"],
-    ["Благодарности"],
+ADMIN_BACK_BUTTON = "⬅️ Назад"
+
+ADMIN_MAIN_MENU = [["Заявки", "Аналитика"], ["Настройки"]]
+
+ADMIN_TICKETS_MENU = [
+    ["Все запросы", "Архив запросов"],
+    ["Очистить все запросы"],
+    [ADMIN_BACK_BUTTON],
+]
+
+ADMIN_ANALYTICS_MENU = [["Статистика", "Благодарности"], [ADMIN_BACK_BUTTON]]
+
+ADMIN_SETTINGS_MENU = [
+    ["Ежедневные сообщения"],
+    ["Изменить CRM", "Изменить спич"],
+    [ADMIN_BACK_BUTTON],
+]
+
+ADMIN_DAILY_MESSAGE_MENU = [
+    ["Добавить сообщение"],
+    ["Настроить сообщение"],
+    [ADMIN_BACK_BUTTON],
+]
+
+DAILY_MESSAGE_SELECTED_MENU = [
+    ["Изменить текст", "Изменить время"],
+    ["Предпросмотр", "Форматирование"],
+    ["Переключить предпросмотр", "Удалить сообщение"],
+    [ADMIN_BACK_BUTTON],
+]
+
+DAILY_MESSAGE_EDIT_KEYBOARD = [["Отмена"], ["Пусто"]]
+
+DAILY_MESSAGE_FORMAT_MENU = [
+    ["Обычный текст"],
+    ["Markdown", "HTML"],
+    [ADMIN_BACK_BUTTON],
 ]
 CANCEL_KEYBOARD = ReplyKeyboardMarkup([["Отмена"]], resize_keyboard=True)
 
