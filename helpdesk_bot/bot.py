@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import inspect
 import logging
 from datetime import time
 
@@ -95,6 +96,24 @@ logging.basicConfig(
 log = logging.getLogger("helpdesk_bot")
 
 
+def _build_conversation_kwargs() -> dict[str, object]:
+    """Return keyword arguments supported by the active PTB ConversationHandler."""
+
+    try:
+        params = inspect.signature(ConversationHandler.__init__).parameters
+    except (TypeError, ValueError):
+        # Some stub implementations might not support introspection; fall back to no kwargs.
+        return {}
+
+    kwargs: dict[str, object] = {}
+    if "per_message" in params:
+        kwargs["per_message"] = True
+    return kwargs
+
+
+_CONVERSATION_KWARGS = _build_conversation_kwargs()
+
+
 def main():
     job_queue = JobQueue()
     app = (
@@ -130,6 +149,7 @@ def main():
             CommandHandler("cancel", tickets.cancel),
             MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
         ],
+        **_CONVERSATION_KWARGS,
     )
 
     conv_archive = ConversationHandler(
@@ -144,6 +164,7 @@ def main():
             CommandHandler("cancel", admin.cancel),
             MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
         ],
+        **_CONVERSATION_KWARGS,
     )
 
     conv_stats = ConversationHandler(
@@ -157,6 +178,7 @@ def main():
             CommandHandler("cancel", admin.cancel),
             MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
         ],
+        **_CONVERSATION_KWARGS,
     )
 
     conv_crm = ConversationHandler(
@@ -170,6 +192,7 @@ def main():
             CommandHandler("cancel", admin.cancel),
             MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
         ],
+        **_CONVERSATION_KWARGS,
     )
 
     conv_speech = ConversationHandler(
@@ -183,7 +206,7 @@ def main():
             CommandHandler("cancel", admin.cancel),
             MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
         ],
-        per_message=True,
+        **_CONVERSATION_KWARGS,
     )
 
     app.add_handler(conv_ticket)
