@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 import logging
+from datetime import time
+
+from zoneinfo import ZoneInfo
 
 from telegram.ext import (
     Application,
@@ -35,6 +38,32 @@ comp_handler = tickets.comp_handler
 problem_menu_handler = tickets.problem_menu_handler
 custom_desc_handler = tickets.custom_desc_handler
 clear_requests_admin = admin.clear_requests_admin
+
+
+DAILY_MESSAGE_TIME = time(hour=17, minute=0, tzinfo=ZoneInfo("Europe/Kyiv"))
+
+
+async def send_daily_message(context: ContextTypes.DEFAULT_TYPE):
+    chat_id = await db.get_setting("daily_message_chat_id")
+    message = await db.get_setting("daily_message_text")
+    if not chat_id or not message:
+        return
+
+    parse_mode = await db.get_setting("daily_message_parse_mode") or ""
+    disable_preview = await db.get_setting("daily_message_disable_preview") or "0"
+    disable_preview_flag = disable_preview == "1"
+
+    try:
+        await context.bot.send_message(
+            int(chat_id),
+            message,
+            parse_mode=parse_mode or None,
+            disable_web_page_preview=disable_preview_flag,
+        )
+    except Exception as exc:  # pragma: no cover - runtime network issues
+        log.warning(
+            "Не удалось отправить ежедневное сообщение в чат %s: %s", chat_id, exc
+        )
 
 
 async def on_startup(app):
@@ -153,6 +182,7 @@ def main():
             CommandHandler("cancel", admin.cancel),
             MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
         ],
+        per_message=True,
     )
 
     app.add_handler(conv_ticket)
