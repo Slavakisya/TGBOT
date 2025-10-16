@@ -11,12 +11,12 @@ from telegram.ext import (
     CallbackQueryHandler,
     ChatMemberHandler,
     ConversationHandler,
-    ContextTypes,
     JobQueue,
     filters,
 )
 
 from . import db
+from .daily import refresh_daily_jobs
 from .handlers import tickets, admin, help, groups
 from .utils import (
     TELEGRAM_TOKEN,
@@ -80,11 +80,7 @@ async def on_startup(app):
             "бота через helpdesk_bot.bot.main()."
         )
         return
-    app.job_queue.run_daily(
-        send_daily_message,
-        time=DAILY_MESSAGE_TIME,
-        name="daily_message",
-    )
+    await refresh_daily_jobs(app.job_queue)
 
 
 async def on_shutdown(app):
@@ -208,19 +204,17 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^Заявки$"), admin.show_tickets_menu))
     app.add_handler(MessageHandler(filters.Regex("^Аналитика$"), admin.show_analytics_menu))
     app.add_handler(MessageHandler(filters.Regex("^Настройки$"), admin.show_settings_menu))
-    app.add_handler(MessageHandler(filters.Regex("^Ежедневное сообщение$"), admin.daily_message_start))
+    app.add_handler(MessageHandler(filters.Regex("^Ежедневные сообщения$"), admin.daily_message_start))
     app.add_handler(
         MessageHandler(
-            filters.Regex(
-                "^(Изменить текст|Предпросмотр|Форматирование|Переключить предпросмотр|Очистить сообщение)$"
-            ),
+            filters.TEXT & ~filters.COMMAND,
             admin.daily_message_menu,
             block=False,
         )
     )
     app.add_handler(
         MessageHandler(
-            filters.Regex("^(Обычный текст|Markdown|HTML)$"),
+            filters.Regex("^(Обычный текст|Markdown|HTML|Отмена)$"),
             admin.daily_message_set_format,
             block=False,
         )
