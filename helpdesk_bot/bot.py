@@ -24,15 +24,10 @@ from .utils import (
     STATE_COMP,
     STATE_PROBLEM_MENU,
     STATE_CUSTOM_DESC,
-    STATE_REPLY,
     STATE_ARCHIVE_DATE,
     STATE_STATS_DATE,
     STATE_CRM_EDIT,
     STATE_SPEECH_EDIT,
-    STATE_DAILY_MESSAGE_MENU,
-    STATE_DAILY_MESSAGE_EDIT,
-    STATE_DAILY_MESSAGE_FORMAT,
-    STATE_FEEDBACK_TEXT,
     ADMIN_BACK_BUTTON,
 )
 
@@ -140,21 +135,6 @@ def main():
         ],
     )
 
-    conv_reply = ConversationHandler(
-        entry_points=[CallbackQueryHandler(admin.init_reply, pattern=r"^reply:\d+$")],
-        states={
-            STATE_REPLY: [
-                MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin.handle_reply),
-            ]
-        },
-        fallbacks=[
-            CommandHandler("cancel", admin.cancel),
-            MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
-        ],
-        per_message=True,
-    )
-
     conv_archive = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Архив запросов$"), admin.init_archive)],
         states={
@@ -206,31 +186,14 @@ def main():
             CommandHandler("cancel", admin.cancel),
             MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
         ],
-    )
-
-    conv_feedback = ConversationHandler(
-        entry_points=[CallbackQueryHandler(tickets.init_feedback, pattern=r"^feedback:\d+$")],
-        states={
-            STATE_FEEDBACK_TEXT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, tickets.handle_feedback_text),
-                MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
-            ]
-        },
-        fallbacks=[
-            CommandHandler("cancel", tickets.cancel),
-            MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
-        ],
         per_message=True,
     )
 
     app.add_handler(conv_ticket)
-    app.add_handler(conv_reply)
     app.add_handler(conv_archive)
     app.add_handler(conv_stats)
     app.add_handler(conv_crm)
     app.add_handler(conv_speech)
-    app.add_handler(conv_daily_message)
-    app.add_handler(conv_feedback)
 
     app.add_handler(CommandHandler("start", tickets.start_menu))
     app.add_handler(MessageHandler(filters.Regex("^Мои запросы$"), tickets.my_requests))
@@ -271,6 +234,22 @@ def main():
         group=1,
     )
     app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            admin.handle_reply,
+            block=False,
+        ),
+        group=2,
+    )
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            tickets.handle_feedback_text,
+            block=False,
+        ),
+        group=3,
+    )
+    app.add_handler(
         MessageHandler(filters.Regex(f"^{ADMIN_BACK_BUTTON}$"), admin.back_to_main)
     )
 
@@ -278,6 +257,8 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^Очистить все запросы$"), admin.clear_requests_admin))
     app.add_handler(MessageHandler(filters.Regex("^Благодарности$"), admin.show_thanks_count))
 
+    app.add_handler(CallbackQueryHandler(admin.init_reply, pattern=r"^reply:\d+$"))
+    app.add_handler(CallbackQueryHandler(tickets.init_feedback, pattern=r"^feedback:\d+$"))
     app.add_handler(CallbackQueryHandler(tickets.show_request, pattern=r"^show:\d+$"))
     app.add_handler(CallbackQueryHandler(tickets.cancel_request_callback, pattern=r"^cancel_req:\d+$"))
     app.add_handler(CallbackQueryHandler(admin.status_callback, pattern=r"^status:\d+:"))

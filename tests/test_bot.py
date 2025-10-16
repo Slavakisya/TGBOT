@@ -24,6 +24,13 @@ def tickets(utils):
     return importlib.import_module('helpdesk_bot.handlers.tickets')
 
 
+@pytest.fixture
+def admin(utils):
+    if 'helpdesk_bot.handlers.admin' in sys.modules:
+        del sys.modules['helpdesk_bot.handlers.admin']
+    return importlib.import_module('helpdesk_bot.handlers.admin')
+
+
 def test_help_text_files_missing(monkeypatch, caplog):
     monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
     monkeypatch.setenv('ADMIN_IDS', '1')
@@ -408,3 +415,132 @@ async def test_send_daily_message(monkeypatch, tmp_path):
     await db_mod.set_setting('daily_message_text', '')
     await bot_mod.send_daily_message(ctx)
     assert ctx.bot.sent == []
+
+
+@pytest.mark.asyncio
+async def test_admin_handle_reply_success(monkeypatch, admin):
+    async def fake_get_ticket(ticket_id):
+        return (ticket_id, 'row', 'prob', 'descr', 'User', 555, 'новый', '2025-01-01T00:00:00')
+
+    sent_messages = []
+
+    class DummyBot:
+        async def send_message(self, chat_id, text, reply_markup=None):
+            sent_messages.append((chat_id, text))
+
+    class DummyMessage:
+        def __init__(self, text):
+            self.text = text
+            self.replies = []
+
+        async def reply_text(self, text, reply_markup=None):
+            self.replies.append(text)
+
+    class DummyUpdate:
+        def __init__(self, text):
+            self.message = DummyMessage(text)
+
+    monkeypatch.setattr(admin.db, 'get_ticket', fake_get_ticket)
+
+    ctx = types.SimpleNamespace(user_data={'reply_ticket': 7}, bot=DummyBot())
+    update = DummyUpdate('Ответ админа')
+
+    await admin.handle_reply(update, ctx)
+
+    assert sent_messages == [(555, '💬 Ответ на запрос #7:\nОтвет админа')]
+    assert any('ответ отправлен' in msg.lower() for msg in update.message.replies)
+    assert 'reply_ticket' not in ctx.user_data
+
+
+@pytest.mark.asyncio
+async def test_admin_handle_reply_cancel(monkeypatch, admin):
+    called = {}
+
+    async def fake_cancel(update, ctx):
+        called['cancelled'] = True
+
+    monkeypatch.setattr(admin, 'cancel', fake_cancel)
+
+    class DummyMessage:
+        def __init__(self, text):
+            self.text = text
+
+    class DummyUpdate:
+        def __init__(self, text):
+            self.message = DummyMessage(text)
+
+    ctx = types.SimpleNamespace(user_data={'reply_ticket': 3}, bot=None)
+    update = DummyUpdate('Отмена')
+
+    await admin.handle_reply(update, ctx)
+
+    assert 'reply_ticket' not in ctx.user_data
+    assert called['cancelled'] is True
+
+
+@pytest.mark.asyncio
+async def test_handle_feedback_text_success(monkeypatch, tickets):
+    async def fake_get_ticket(ticket_id):
+        return (ticket_id, '1', 'Проблема', 'Описание', 'User', 999, 'готово', '2025-01-01T00:00:00')
+
+    async def fake_update_status(ticket_id, status):
+        assert ticket_id == 5
+        assert status == 'принято'
+
+    sent_messages = []
+
+    class DummyBot:
+        async def send_message(self, chat_id, text, reply_markup=None):
+            sent_messages.append((chat_id, text))
+
+    class DummyMessage:
+        def __init__(self, text):
+            self.text = text
+            self.replies = []
+
+        async def reply_text(self, text, reply_markup=None):
+            self.replies.append(text)
+
+    class DummyUpdate:
+        def __init__(self, text):
+            self.message = DummyMessage(text)
+
+    monkeypatch.setattr(tickets.db, 'get_ticket', fake_get_ticket)
+    monkeypatch.setattr(tickets.db, 'update_status', fake_update_status)
+    monkeypatch.setattr(tickets, 'ALL_ADMINS', [42])
+    monkeypatch.setattr(tickets, 'format_kyiv_time', lambda ts: 'time')
+
+    ctx = types.SimpleNamespace(user_data={'feedback_ticket': 5}, bot=DummyBot())
+    update = DummyUpdate('Все еще не работает')
+
+    await tickets.handle_feedback_text(update, ctx)
+
+    assert any('фидбэк' in text.lower() for _, text in sent_messages)
+    assert any('спасибо' in msg.lower() for msg in update.message.replies)
+    assert 'feedback_ticket' not in ctx.user_data
+
+
+@pytest.mark.asyncio
+async def test_handle_feedback_text_cancel(monkeypatch, tickets):
+    called = {}
+
+    async def fake_cancel(update, ctx):
+        called['cancelled'] = True
+
+    monkeypatch.setattr(tickets, 'cancel', fake_cancel)
+
+    class DummyMessage:
+        def __init__(self, text):
+            self.text = text
+
+    class DummyUpdate:
+        def __init__(self, text):
+            self.message = DummyMessage(text)
+
+    ctx = types.SimpleNamespace(user_data={'feedback_ticket': 9}, bot=None)
+    update = DummyUpdate('Отмена')
+
+    await tickets.handle_feedback_text(update, ctx)
+
+    assert 'feedback_ticket' not in ctx.user_data
+    assert called['cancelled'] is True

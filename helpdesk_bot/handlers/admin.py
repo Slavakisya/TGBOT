@@ -18,7 +18,6 @@ from ..utils import (
     USER_MAIN_MENU,
     format_kyiv_time,
     log,
-    STATE_REPLY,
     STATE_ARCHIVE_DATE,
     STATE_STATS_DATE,
     STATE_CRM_EDIT,
@@ -46,7 +45,7 @@ def _get_daily_state(ctx: ContextTypes.DEFAULT_TYPE) -> str | None:
     return ctx.user_data.get(DAILY_STATE_KEY)
 
 
-async def init_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+async def init_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
     await q.answer()
     rid = int(q.data.split(":")[1])
@@ -54,14 +53,19 @@ async def init_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     await q.message.reply_text(
         f"Введите ответ для запроса #{rid}:", reply_markup=CANCEL_KEYBOARD
     )
-    return STATE_REPLY
 
 
-async def handle_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    txt = update.message.text.strip()
-    if txt == "Отмена":
-        return await cancel(update, ctx)
+async def handle_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     rid = ctx.user_data.get("reply_ticket")
+    if not rid:
+        return
+
+    txt = (update.message.text or "").strip()
+    if txt == "Отмена":
+        ctx.user_data.pop("reply_ticket", None)
+        await cancel(update, ctx)
+        return
+
     tkt = await db.get_ticket(rid)
     if tkt:
         await ctx.bot.send_message(
@@ -76,7 +80,7 @@ async def handle_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             "Запрос не найден.",
             reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True),
         )
-    return ConversationHandler.END
+    ctx.user_data.pop("reply_ticket", None)
 
 
 def _is_admin(update: Update) -> bool:
@@ -590,6 +594,7 @@ async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         menu = ADMIN_MAIN_MENU
         if _get_daily_state(ctx):
             _set_daily_state(ctx, None)
+        ctx.user_data.pop("reply_ticket", None)
     await update.message.reply_text(
         "❌ Отменено.",
         reply_markup=ReplyKeyboardMarkup(menu, resize_keyboard=True),

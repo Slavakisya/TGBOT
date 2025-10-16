@@ -17,7 +17,6 @@ from ..utils import (
     STATE_COMP,
     STATE_PROBLEM_MENU,
     STATE_CUSTOM_DESC,
-    STATE_FEEDBACK_TEXT,
 )
 
 
@@ -226,7 +225,7 @@ async def cancel_request_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE
     )
 
 
-async def init_feedback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+async def init_feedback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
     await q.answer()
     rid = int(q.data.split(":")[1])
@@ -235,21 +234,27 @@ async def init_feedback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         "Опишите, пожалуйста, что осталось нерешённым:",
         reply_markup=CANCEL_KEYBOARD,
     )
-    return STATE_FEEDBACK_TEXT
 
 
-async def handle_feedback_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    txt = update.message.text.strip()
-    if txt == "Отмена":
-        return await cancel(update, ctx)
+async def handle_feedback_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     rid = ctx.user_data.get("feedback_ticket")
+    if not rid:
+        return
+
+    txt = (update.message.text or "").strip()
+    if txt == "Отмена":
+        ctx.user_data.pop("feedback_ticket", None)
+        await cancel(update, ctx)
+        return
+
     tkt = await db.get_ticket(rid)
     if not tkt:
         await update.message.reply_text(
             "Ошибка: запрос не найден.",
             reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True),
         )
-        return ConversationHandler.END
+        ctx.user_data.pop("feedback_ticket", None)
+        return
 
     await db.update_status(rid, "принято")
 
@@ -284,7 +289,7 @@ async def handle_feedback_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
         "Спасибо за обратную связь! Возвращаемся в главное меню.",
         reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True),
     )
-    return ConversationHandler.END
+    ctx.user_data.pop("feedback_ticket", None)
 
 
 async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -295,4 +300,5 @@ async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         "❌ Отменено.",
         reply_markup=ReplyKeyboardMarkup(menu, resize_keyboard=True),
     )
+    ctx.user_data.pop("feedback_ticket", None)
     return ConversationHandler.END
