@@ -59,6 +59,17 @@ async def init_db():
             )
             """
         )
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS daily_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                text TEXT NOT NULL DEFAULT '',
+                parse_mode TEXT NOT NULL DEFAULT '',
+                disable_preview INTEGER NOT NULL DEFAULT 0,
+                send_time TEXT NOT NULL DEFAULT '17:00'
+            )
+            """
+        )
         # дефолтные тексты CRM и спича
         try:
             default_crm = CRM_PATH.read_text(encoding="utf-8")
@@ -72,8 +83,46 @@ async def init_db():
             default_speech = ""
         await conn.executemany(
             "INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)",
-            [("crm_text", default_crm), ("speech_text", default_speech)],
+            [
+                ("crm_text", default_crm),
+                ("speech_text", default_speech),
+                ("daily_message_text", ""),
+                ("daily_message_chat_id", ""),
+                ("daily_message_parse_mode", ""),
+                ("daily_message_disable_preview", "0"),
+            ],
         )
+
+        # миграция старой настройки ежедневного сообщения в новую таблицу
+        cur = await conn.execute("SELECT COUNT(*) FROM daily_messages")
+        has_messages = (await cur.fetchone())[0] > 0
+        if not has_messages:
+            cur = await conn.execute(
+                "SELECT value FROM settings WHERE key = ?",
+                ("daily_message_text",),
+            )
+            text_row = await cur.fetchone()
+            text_value = text_row[0] if text_row else ""
+            if text_value:
+                cur = await conn.execute(
+                    "SELECT value FROM settings WHERE key = ?",
+                    ("daily_message_parse_mode",),
+                )
+                parse_mode_row = await cur.fetchone()
+                parse_mode_value = parse_mode_row[0] if parse_mode_row else ""
+                cur = await conn.execute(
+                    "SELECT value FROM settings WHERE key = ?",
+                    ("daily_message_disable_preview",),
+                )
+                disable_row = await cur.fetchone()
+                disable_value = disable_row[0] if disable_row else "0"
+                await conn.execute(
+                    """
+                    INSERT INTO daily_messages(text, parse_mode, disable_preview, send_time)
+                    VALUES (?, ?, ?, '17:00')
+                    """,
+                    (text_value, parse_mode_value, 1 if disable_value == "1" else 0),
+                )
         await conn.commit()
 
 
@@ -90,6 +139,114 @@ async def set_setting(key: str, value: str):
             "INSERT INTO settings(key,value) VALUES(?,?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, value),
+        )
+        await conn.commit()
+
+
+async def list_daily_messages() -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cur = await conn.execute(
+            """
+            SELECT id, text, parse_mode, disable_preview, send_time
+              FROM daily_messages
+             ORDER BY send_time, id
+            """
+        )
+        rows = await cur.fetchall()
+        return [
+            {
+                "id": row[0],
+                "text": row[1],
+                "parse_mode": row[2],
+                "disable_preview": bool(row[3]),
+                "send_time": row[4],
+            }
+            for row in rows
+        ]
+
+
+async def get_daily_message(message_id: int) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cur = await conn.execute(
+            """
+            SELECT id, text, parse_mode, disable_preview, send_time
+              FROM daily_messages
+             WHERE id = ?
+            """,
+            (message_id,),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0],
+            "text": row[1],
+            "parse_mode": row[2],
+            "disable_preview": bool(row[3]),
+            "send_time": row[4],
+        }
+
+
+async def add_daily_message(
+    text: str,
+    send_time: str,
+    parse_mode: str = "",
+    disable_preview: bool = False,
+) -> int:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cur = await conn.execute(
+            """
+            INSERT INTO daily_messages(text, parse_mode, disable_preview, send_time)
+            VALUES (?, ?, ?, ?)
+            """,
+            (text, parse_mode, 1 if disable_preview else 0, send_time),
+        )
+        await conn.commit()
+        return cur.lastrowid
+
+
+async def update_daily_message(
+    message_id: int,
+    *,
+    text: str | None = None,
+    parse_mode: str | None = None,
+    disable_preview: bool | None = None,
+    send_time: str | None = None,
+) -> None:
+    assignments = []
+    params: list = []
+
+    if text is not None:
+        assignments.append("text = ?")
+        params.append(text)
+    if parse_mode is not None:
+        assignments.append("parse_mode = ?")
+        params.append(parse_mode)
+    if disable_preview is not None:
+        assignments.append("disable_preview = ?")
+        params.append(1 if disable_preview else 0)
+    if send_time is not None:
+        assignments.append("send_time = ?")
+        params.append(send_time)
+
+    if not assignments:
+        return
+
+    params.append(message_id)
+
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            f"UPDATE daily_messages SET {', '.join(assignments)} WHERE id = ?",
+            params,
+        )
+        await conn.commit()
+
+
+async def delete_daily_message(message_id: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            "DELETE FROM daily_messages WHERE id = ?",
+            (message_id,),
         )
         await conn.commit()
 
