@@ -186,6 +186,7 @@ def main():
             CommandHandler("cancel", admin.cancel),
             MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
         ],
+        per_message=True,
     )
 
     app.add_handler(conv_ticket)
