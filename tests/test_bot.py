@@ -328,44 +328,44 @@ async def test_daily_message_admin_flow(monkeypatch, tmp_path):
             self.message = DummyMessage(text)
             self.effective_user = DummyUser(1)
 
-    ctx = types.SimpleNamespace()
+    ctx = types.SimpleNamespace(user_data={})
     update_start = DummyUpdate('start')
-    state = await admin_mod.daily_message_start(update_start, ctx)
-    assert state == admin_mod.STATE_DAILY_MESSAGE_MENU
+    await admin_mod.daily_message_start(update_start, ctx)
+    assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_MENU
     assert any('ежедневное сообщение' in msg.lower() for msg in update_start.message.replies)
 
     update_menu = DummyUpdate('Изменить текст')
-    state = await admin_mod.daily_message_menu(update_menu, ctx)
-    assert state == admin_mod.STATE_DAILY_MESSAGE_EDIT
+    await admin_mod.daily_message_menu(update_menu, ctx)
+    assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_EDIT
     assert any('новый текст' in msg.lower() for msg in update_menu.message.replies)
 
     update_save = DummyUpdate('Новое напоминание')
-    state = await admin_mod.daily_message_save(update_save, ctx)
-    assert state == admin_mod.STATE_DAILY_MESSAGE_MENU
+    await admin_mod.daily_message_save(update_save, ctx)
+    assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_MENU
     assert any('обновлено' in msg.lower() for msg in update_save.message.replies)
     assert await db_mod.get_setting('daily_message_text') == 'Новое напоминание'
 
     update_format = DummyUpdate('Форматирование')
-    state = await admin_mod.daily_message_menu(update_format, ctx)
-    assert state == admin_mod.STATE_DAILY_MESSAGE_FORMAT
+    await admin_mod.daily_message_menu(update_format, ctx)
+    assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_FORMAT
 
     update_choose_format = DummyUpdate('Markdown')
-    state = await admin_mod.daily_message_set_format(update_choose_format, ctx)
-    assert state == admin_mod.STATE_DAILY_MESSAGE_MENU
+    await admin_mod.daily_message_set_format(update_choose_format, ctx)
+    assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_MENU
     assert await db_mod.get_setting('daily_message_parse_mode') == 'Markdown'
 
     update_toggle_preview = DummyUpdate('Переключить предпросмотр')
-    state = await admin_mod.daily_message_menu(update_toggle_preview, ctx)
-    assert state == admin_mod.STATE_DAILY_MESSAGE_MENU
+    await admin_mod.daily_message_menu(update_toggle_preview, ctx)
+    assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_MENU
     assert await db_mod.get_setting('daily_message_disable_preview') == '1'
 
     update_menu_disable = DummyUpdate('Изменить текст')
-    state = await admin_mod.daily_message_menu(update_menu_disable, ctx)
-    assert state == admin_mod.STATE_DAILY_MESSAGE_EDIT
+    await admin_mod.daily_message_menu(update_menu_disable, ctx)
+    assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_EDIT
 
     update_disable = DummyUpdate('Пусто')
-    state = await admin_mod.daily_message_save(update_disable, ctx)
-    assert state == admin_mod.STATE_DAILY_MESSAGE_MENU
+    await admin_mod.daily_message_save(update_disable, ctx)
+    assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_MENU
     assert any('отключено' in msg.lower() for msg in update_disable.message.replies)
     assert await db_mod.get_setting('daily_message_text') == ''
 

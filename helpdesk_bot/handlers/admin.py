@@ -29,6 +29,23 @@ from ..utils import (
 )
 
 
+DAILY_STATE_KEY = "daily_message_state"
+DAILY_STATE_MENU = "menu"
+DAILY_STATE_EDIT = "edit"
+DAILY_STATE_FORMAT = "format"
+
+
+def _set_daily_state(ctx: ContextTypes.DEFAULT_TYPE, value: str | None) -> None:
+    if value is None:
+        ctx.user_data.pop(DAILY_STATE_KEY, None)
+    else:
+        ctx.user_data[DAILY_STATE_KEY] = value
+
+
+def _get_daily_state(ctx: ContextTypes.DEFAULT_TYPE) -> str | None:
+    return ctx.user_data.get(DAILY_STATE_KEY)
+
+
 async def init_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     q = update.callback_query
     await q.answer()
@@ -88,6 +105,7 @@ async def show_analytics_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
 async def show_settings_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_admin(update):
         return
+    _set_daily_state(ctx, None)
     await update.message.reply_text(
         "Раздел «Настройки». Выберите действие:",
         reply_markup=ReplyKeyboardMarkup(ADMIN_SETTINGS_MENU, resize_keyboard=True),
@@ -97,6 +115,8 @@ async def show_settings_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
 async def back_to_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_admin(update):
         return
+    if _get_daily_state(ctx):
+        _set_daily_state(ctx, None)
     await update.message.reply_text(
         "Меню администратора:",
         reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True),
@@ -288,29 +308,34 @@ async def _send_daily_menu(update: Update) -> dict:
     return overview
 
 
-async def daily_message_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+async def daily_message_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_admin(update):
-        return ConversationHandler.END
+        return
+    _set_daily_state(ctx, DAILY_STATE_MENU)
     await _send_daily_menu(update)
-    return STATE_DAILY_MESSAGE_MENU
 
 
-async def daily_message_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+async def daily_message_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_admin(update):
-        return ConversationHandler.END
+        return
+
+    if _get_daily_state(ctx) != DAILY_STATE_MENU:
+        return
 
     choice = update.message.text.strip()
 
     if choice == ADMIN_BACK_BUTTON:
+        _set_daily_state(ctx, None)
         await show_settings_menu(update, ctx)
-        return ConversationHandler.END
+        return
 
     if choice == "Изменить текст":
+        _set_daily_state(ctx, DAILY_STATE_EDIT)
         await update.message.reply_text(
             "Отправьте новый текст сообщения. Для отключения отправьте «Пусто».",
             reply_markup=ReplyKeyboardMarkup(DAILY_MESSAGE_EDIT_KEYBOARD, resize_keyboard=True),
         )
-        return STATE_DAILY_MESSAGE_EDIT
+        return
 
     if choice == "Предпросмотр":
         overview = await _daily_overview()
@@ -321,7 +346,7 @@ async def daily_message_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
                     ADMIN_DAILY_MESSAGE_MENU, resize_keyboard=True
                 ),
             )
-            return STATE_DAILY_MESSAGE_MENU
+            return
         try:
             await update.message.reply_text(
                 overview["text"],
@@ -336,16 +361,17 @@ async def daily_message_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
                     ADMIN_DAILY_MESSAGE_MENU, resize_keyboard=True
                 ),
             )
-        return STATE_DAILY_MESSAGE_MENU
+        return
 
     if choice == "Форматирование":
+        _set_daily_state(ctx, DAILY_STATE_FORMAT)
         await update.message.reply_text(
             "Выберите режим форматирования:",
             reply_markup=ReplyKeyboardMarkup(
                 DAILY_MESSAGE_FORMAT_MENU, resize_keyboard=True
             ),
         )
-        return STATE_DAILY_MESSAGE_FORMAT
+        return
 
     if choice == "Переключить предпросмотр":
         current = await db.get_setting("daily_message_disable_preview") or "0"
@@ -354,56 +380,64 @@ async def daily_message_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
         status = "включён" if new_value == "0" else "выключен"
         await update.message.reply_text(f"Предпросмотр ссылок {status}.")
         await _send_daily_menu(update)
-        return STATE_DAILY_MESSAGE_MENU
+        return
 
     if choice == "Очистить сообщение":
         await db.set_setting("daily_message_text", "")
         await update.message.reply_text("Ежедневное сообщение очищено.")
         await _send_daily_menu(update)
-        return STATE_DAILY_MESSAGE_MENU
+        return
 
     await update.message.reply_text(
         "Пожалуйста, используйте кнопки меню.",
         reply_markup=ReplyKeyboardMarkup(ADMIN_DAILY_MESSAGE_MENU, resize_keyboard=True),
     )
-    return STATE_DAILY_MESSAGE_MENU
 
 
-async def daily_message_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+async def daily_message_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_admin(update):
-        return ConversationHandler.END
+        return
+
+    if _get_daily_state(ctx) != DAILY_STATE_EDIT:
+        return
 
     raw_text = update.message.text or ""
     choice = raw_text.strip().lower()
 
     if choice == "отмена":
         await update.message.reply_text("Изменение отменено.")
+        _set_daily_state(ctx, DAILY_STATE_MENU)
         await _send_daily_menu(update)
-        return STATE_DAILY_MESSAGE_MENU
+        return
 
     if choice == "пусто":
         await db.set_setting("daily_message_text", "")
         await update.message.reply_text("✅ Ежедневное сообщение отключено.")
+        _set_daily_state(ctx, DAILY_STATE_MENU)
         await _send_daily_menu(update)
-        return STATE_DAILY_MESSAGE_MENU
+        return
 
     await db.set_setting("daily_message_text", raw_text)
     await update.message.reply_text("✅ Ежедневное сообщение обновлено.")
+    _set_daily_state(ctx, DAILY_STATE_MENU)
     await _send_daily_menu(update)
-    return STATE_DAILY_MESSAGE_MENU
 
 
-async def daily_message_set_format(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+async def daily_message_set_format(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_admin(update):
-        return ConversationHandler.END
+        return
+
+    if _get_daily_state(ctx) != DAILY_STATE_FORMAT:
+        return
 
     choice = (update.message.text or "").strip()
     lowered = choice.lower()
 
     if lowered == "отмена" or choice == ADMIN_BACK_BUTTON:
         await update.message.reply_text("Настройка форматирования отменена.")
+        _set_daily_state(ctx, DAILY_STATE_MENU)
         await _send_daily_menu(update)
-        return STATE_DAILY_MESSAGE_MENU
+        return
 
     modes = {
         "обычный текст": "",
@@ -418,13 +452,13 @@ async def daily_message_set_format(update: Update, ctx: ContextTypes.DEFAULT_TYP
                 DAILY_MESSAGE_FORMAT_MENU, resize_keyboard=True
             ),
         )
-        return STATE_DAILY_MESSAGE_FORMAT
+        return
 
     await db.set_setting("daily_message_parse_mode", modes[lowered])
     label = "обычный текст" if modes[lowered] == "" else modes[lowered]
     await update.message.reply_text(f"Форматирование изменено на: {label}.")
+    _set_daily_state(ctx, DAILY_STATE_MENU)
     await _send_daily_menu(update)
-    return STATE_DAILY_MESSAGE_MENU
 
 
 async def status_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -554,6 +588,8 @@ async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     menu = USER_MAIN_MENU
     if _is_admin(update):
         menu = ADMIN_MAIN_MENU
+        if _get_daily_state(ctx):
+            _set_daily_state(ctx, None)
     await update.message.reply_text(
         "❌ Отменено.",
         reply_markup=ReplyKeyboardMarkup(menu, resize_keyboard=True),

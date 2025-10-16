@@ -208,57 +208,6 @@ def main():
         ],
     )
 
-    conv_daily_message = ConversationHandler(
-        entry_points=[
-            MessageHandler(
-                filters.Regex("^Ежедневное сообщение$"), admin.daily_message_start
-            )
-        ],
-        states={
-            STATE_DAILY_MESSAGE_MENU: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND, admin.daily_message_menu
-                )
-            ],
-            STATE_DAILY_MESSAGE_EDIT: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    admin.daily_message_save,
-                )
-            ],
-            STATE_DAILY_MESSAGE_FORMAT: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    admin.daily_message_set_format,
-                )
-            ],
-        },
-        fallbacks=[
-            CommandHandler("cancel", admin.cancel),
-            MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
-        ],
-    )
-
-    conv_daily_message = ConversationHandler(
-        entry_points=[
-            MessageHandler(
-                filters.Regex("^Ежедневное сообщение$"), admin.daily_message_start
-            )
-        ],
-        states={
-            STATE_DAILY_MESSAGE_EDIT: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    admin.daily_message_save,
-                )
-            ]
-        },
-        fallbacks=[
-            CommandHandler("cancel", tickets.cancel),
-            MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
-        ],
-    )
-
     conv_feedback = ConversationHandler(
         entry_points=[CallbackQueryHandler(tickets.init_feedback, pattern=r"^feedback:\d+$")],
         states={
@@ -296,6 +245,31 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^Заявки$"), admin.show_tickets_menu))
     app.add_handler(MessageHandler(filters.Regex("^Аналитика$"), admin.show_analytics_menu))
     app.add_handler(MessageHandler(filters.Regex("^Настройки$"), admin.show_settings_menu))
+    app.add_handler(MessageHandler(filters.Regex("^Ежедневное сообщение$"), admin.daily_message_start))
+    app.add_handler(
+        MessageHandler(
+            filters.Regex(
+                "^(Изменить текст|Предпросмотр|Форматирование|Переключить предпросмотр|Очистить сообщение)$"
+            ),
+            admin.daily_message_menu,
+            block=False,
+        )
+    )
+    app.add_handler(
+        MessageHandler(
+            filters.Regex("^(Обычный текст|Markdown|HTML)$"),
+            admin.daily_message_set_format,
+            block=False,
+        )
+    )
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            admin.daily_message_save,
+            block=False,
+        ),
+        group=1,
+    )
     app.add_handler(
         MessageHandler(filters.Regex(f"^{ADMIN_BACK_BUTTON}$"), admin.back_to_main)
     )
