@@ -29,6 +29,9 @@ from .utils import (
     STATE_STATS_DATE,
     STATE_CRM_EDIT,
     STATE_SPEECH_EDIT,
+    STATE_DAILY_MESSAGE_MENU,
+    STATE_DAILY_MESSAGE_EDIT,
+    STATE_DAILY_MESSAGE_FORMAT,
     STATE_FEEDBACK_TEXT,
     ADMIN_BACK_BUTTON,
 )
@@ -226,6 +229,7 @@ def main():
     app.add_handler(conv_stats)
     app.add_handler(conv_crm)
     app.add_handler(conv_speech)
+    app.add_handler(conv_daily_message)
     app.add_handler(conv_feedback)
 
     app.add_handler(CommandHandler("start", tickets.start_menu))
