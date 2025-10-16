@@ -12,6 +12,7 @@ from telegram.ext import (
     ChatMemberHandler,
     ConversationHandler,
     JobQueue,
+    ContextTypes,
     filters,
 )
 

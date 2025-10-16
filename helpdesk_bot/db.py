@@ -1,9 +1,13 @@
 # db.py
 
 import os
-import aiosqlite
 import logging
 from pathlib import Path
+
+try:  # pragma: no cover - exercised when dependency is installed
+    import aiosqlite  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - fallback for environments without aiosqlite
+    from . import _compat_aiosqlite as aiosqlite  # type: ignore
 
 DB_PATH = Path(os.environ.get("HELPDESK_DB_PATH", Path(__file__).with_name("tickets.db")))
 
