@@ -77,3 +77,7 @@ async def refresh_daily_jobs(job_queue: JobQueue | None) -> None:
             name=f"daily_message:{message['id']}",
             data={"message_id": message["id"]},
         )
+    log.info(
+        "Запланировано ежедневных сообщений: %s",
+        len(messages),
+    )
