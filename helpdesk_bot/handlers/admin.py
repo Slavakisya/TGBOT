@@ -2,17 +2,24 @@ from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKe
 from telegram.ext import ContextTypes, ConversationHandler
 
 from .. import db
+from ..daily import refresh_daily_jobs
 from ..utils import (
     ADMIN_IDS,
     ADMIN_MAIN_MENU,
+    ADMIN_TICKETS_MENU,
+    ADMIN_ANALYTICS_MENU,
+    ADMIN_SETTINGS_MENU,
+    ADMIN_DAILY_MESSAGE_MENU,
+    DAILY_MESSAGE_SELECTED_MENU,
+    DAILY_MESSAGE_EDIT_KEYBOARD,
+    DAILY_MESSAGE_FORMAT_MENU,
+    ADMIN_BACK_BUTTON,
     STATUS_OPTIONS,
     ALL_ADMINS,
     CANCEL_KEYBOARD,
     USER_MAIN_MENU,
     format_kyiv_time,
     log,
-    STATE_REPLY,
-    STATE_BROADCAST,
     STATE_ARCHIVE_DATE,
     STATE_STATS_DATE,
     STATE_CRM_EDIT,
@@ -20,7 +27,90 @@ from ..utils import (
 )
 
 
-async def init_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+DAILY_STATE_KEY = "daily_message_state"
+DAILY_STATE_MENU = "menu"
+DAILY_STATE_EDIT = "edit"
+DAILY_STATE_FORMAT = "format"
+DAILY_STATE_SELECT = "select"
+DAILY_STATE_SELECTED = "selected"
+DAILY_STATE_EDIT_TIME = "edit_time"
+DAILY_STATE_ADD_TIME = "add_time"
+DAILY_STATE_ADD_TEXT = "add_text"
+
+DAILY_SELECTED_KEY = "daily_message_selected_id"
+DAILY_NEW_TIME_KEY = "daily_message_new_time"
+DAILY_SKIP_KEY = "daily_message_skip_update"
+
+
+def _set_daily_state(ctx: ContextTypes.DEFAULT_TYPE, value: str | None) -> None:
+    if value is None:
+        ctx.user_data.pop(DAILY_STATE_KEY, None)
+    else:
+        ctx.user_data[DAILY_STATE_KEY] = value
+
+
+def _get_daily_state(ctx: ContextTypes.DEFAULT_TYPE) -> str | None:
+    return ctx.user_data.get(DAILY_STATE_KEY)
+
+
+def _set_selected_message(ctx: ContextTypes.DEFAULT_TYPE, message_id: int | None) -> None:
+    if message_id is None:
+        ctx.user_data.pop(DAILY_SELECTED_KEY, None)
+    else:
+        ctx.user_data[DAILY_SELECTED_KEY] = message_id
+
+
+def _get_selected_message(ctx: ContextTypes.DEFAULT_TYPE) -> int | None:
+    return ctx.user_data.get(DAILY_SELECTED_KEY)
+
+
+def _set_new_message_time(ctx: ContextTypes.DEFAULT_TYPE, value: str | None) -> None:
+    if value is None:
+        ctx.user_data.pop(DAILY_NEW_TIME_KEY, None)
+    else:
+        ctx.user_data[DAILY_NEW_TIME_KEY] = value
+
+
+def _get_new_message_time(ctx: ContextTypes.DEFAULT_TYPE) -> str | None:
+    return ctx.user_data.get(DAILY_NEW_TIME_KEY)
+
+
+def _mark_skip_update(ctx: ContextTypes.DEFAULT_TYPE, update: Update) -> None:
+    update_id = getattr(update, "update_id", None)
+    if update_id is not None:
+        ctx.user_data[DAILY_SKIP_KEY] = update_id
+
+
+def _should_skip_update(ctx: ContextTypes.DEFAULT_TYPE, update: Update) -> bool:
+    update_id = getattr(update, "update_id", None)
+    if update_id is not None and ctx.user_data.get(DAILY_SKIP_KEY) == update_id:
+        ctx.user_data.pop(DAILY_SKIP_KEY, None)
+        return True
+    return False
+
+
+def _is_valid_time(value: str) -> bool:
+    try:
+        hours_str, minutes_str = value.split(":", 1)
+        hours = int(hours_str)
+        minutes = int(minutes_str)
+        return 0 <= hours < 24 and 0 <= minutes < 60
+    except Exception:
+        return False
+
+
+async def _refresh_jobs_from_ctx(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    app = getattr(ctx, "application", None)
+    job_queue = None
+    if app is not None:
+        job_queue = getattr(app, "job_queue", None)
+    elif hasattr(ctx, "job_queue"):
+        job_queue = getattr(ctx, "job_queue")
+    if job_queue:
+        await refresh_daily_jobs(job_queue)
+
+
+async def init_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
     await q.answer()
     rid = int(q.data.split(":")[1])
@@ -28,14 +118,19 @@ async def init_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     await q.message.reply_text(
         f"Введите ответ для запроса #{rid}:", reply_markup=CANCEL_KEYBOARD
     )
-    return STATE_REPLY
 
 
-async def handle_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    txt = update.message.text.strip()
-    if txt == "Отмена":
-        return await cancel(update, ctx)
+async def handle_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     rid = ctx.user_data.get("reply_ticket")
+    if not rid:
+        return
+
+    txt = (update.message.text or "").strip()
+    if txt == "Отмена":
+        ctx.user_data.pop("reply_ticket", None)
+        await cancel(update, ctx)
+        return
+
     tkt = await db.get_ticket(rid)
     if tkt:
         await ctx.bot.send_message(
@@ -50,33 +145,57 @@ async def handle_reply(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             "Запрос не найден.",
             reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True),
         )
-    return ConversationHandler.END
+    ctx.user_data.pop("reply_ticket", None)
 
 
-async def init_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+def _is_admin(update: Update) -> bool:
+    user = update.effective_user
+    return bool(user and user.id in ADMIN_IDS)
+
+
+async def show_tickets_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_admin(update):
+        return
     await update.message.reply_text(
-        "Введите текст рассылки:", reply_markup=CANCEL_KEYBOARD
+        "Раздел «Заявки». Выберите действие:",
+        reply_markup=ReplyKeyboardMarkup(ADMIN_TICKETS_MENU, resize_keyboard=True),
     )
-    return STATE_BROADCAST
 
 
-async def handle_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    txt = update.message.text.strip()
-    if txt == "Отмена":
-        return await cancel(update, ctx)
-    users = await db.list_users()
-    sent = 0
-    for uid in users:
-        try:
-            await ctx.bot.send_message(uid, f"📢 Админ рассылка:\n\n{txt}")
-            sent += 1
-        except Exception as e:
-            log.warning("Не удалось отправить рассылку пользователю %s: %s", uid, e)
+async def show_analytics_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_admin(update):
+        return
     await update.message.reply_text(
-        f"Рассылка отправлена {sent} пользователям.",
+        "Раздел «Аналитика». Выберите действие:",
+        reply_markup=ReplyKeyboardMarkup(ADMIN_ANALYTICS_MENU, resize_keyboard=True),
+    )
+
+
+async def show_settings_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_admin(update):
+        return
+    _set_daily_state(ctx, None)
+    _set_selected_message(ctx, None)
+    _set_new_message_time(ctx, None)
+    ctx.user_data.pop(DAILY_SKIP_KEY, None)
+    await update.message.reply_text(
+        "Раздел «Настройки». Выберите действие:",
+        reply_markup=ReplyKeyboardMarkup(ADMIN_SETTINGS_MENU, resize_keyboard=True),
+    )
+
+
+async def back_to_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_admin(update):
+        return
+    if _get_daily_state(ctx):
+        _set_daily_state(ctx, None)
+    _set_selected_message(ctx, None)
+    _set_new_message_time(ctx, None)
+    ctx.user_data.pop(DAILY_SKIP_KEY, None)
+    await update.message.reply_text(
+        "Меню администратора:",
         reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True),
     )
-    return ConversationHandler.END
 
 
 async def all_requests_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -217,6 +336,459 @@ async def edit_speech_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> in
     return ConversationHandler.END
 
 
+async def _daily_overview() -> dict:
+    messages = await db.list_daily_messages()
+    chat_id = await db.get_setting("daily_message_chat_id") or ""
+
+    lines = ["Ежедневные сообщения:"]
+    if not messages:
+        lines.append("— сообщений нет —")
+    else:
+        for entry in messages:
+            preview = entry["text"].strip().splitlines()[0] if entry["text"].strip() else "— пусто —"
+            lines.append(f"{entry['id']}. {entry['send_time']} — {preview}")
+
+    lines.append("")
+    if chat_id:
+        lines.append(f"Чат для отправки: {chat_id}")
+    else:
+        lines.append(
+            "Чат для отправки не привязан. Добавьте бота администратором в нужную группу, чтобы закрепить её."
+        )
+    lines.append("")
+    lines.append("Выберите действие:")
+
+    return {
+        "messages": messages,
+        "chat_id": chat_id,
+        "summary": "\n".join(lines),
+    }
+
+
+async def _send_daily_menu(update: Update) -> dict:
+    overview = await _daily_overview()
+    await update.message.reply_text(
+        overview["summary"],
+        reply_markup=ReplyKeyboardMarkup(ADMIN_DAILY_MESSAGE_MENU, resize_keyboard=True),
+    )
+    return overview
+
+
+async def _send_selected_menu(update: Update, message: dict) -> None:
+    parse_mode_label = {
+        "": "обычный текст",
+        "Markdown": "Markdown",
+        "HTML": "HTML",
+    }.get(message["parse_mode"], message["parse_mode"])
+
+    preview_label = "выключен" if message["disable_preview"] else "включён"
+
+    lines = [
+        f"Сообщение #{message['id']}",
+        f"Время отправки: {message['send_time']}",
+        f"Форматирование: {parse_mode_label}",
+        f"Предпросмотр ссылок: {preview_label}",
+        "",
+    ]
+    lines.append(message["text"] if message["text"].strip() else "— текст не задан —")
+    lines.append("")
+    lines.append("Выберите действие:")
+
+    await update.message.reply_text(
+        "\n".join(lines),
+        reply_markup=ReplyKeyboardMarkup(DAILY_MESSAGE_SELECTED_MENU, resize_keyboard=True),
+    )
+
+
+async def daily_message_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_admin(update):
+        return
+    _set_daily_state(ctx, DAILY_STATE_MENU)
+    _set_selected_message(ctx, None)
+    _set_new_message_time(ctx, None)
+    ctx.user_data.pop(DAILY_SKIP_KEY, None)
+    await _send_daily_menu(update)
+
+
+async def daily_message_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_admin(update):
+        return
+
+    state = _get_daily_state(ctx)
+    if state in {None, DAILY_STATE_EDIT, DAILY_STATE_ADD_TIME, DAILY_STATE_ADD_TEXT, DAILY_STATE_EDIT_TIME, DAILY_STATE_FORMAT}:
+        return
+
+    choice = update.message.text.strip()
+
+    if state == DAILY_STATE_MENU:
+        if choice == ADMIN_BACK_BUTTON:
+            _set_daily_state(ctx, None)
+            await show_settings_menu(update, ctx)
+            return
+
+        if choice == "Добавить сообщение":
+            _set_daily_state(ctx, DAILY_STATE_ADD_TIME)
+            _mark_skip_update(ctx, update)
+            await update.message.reply_text(
+                "Введите время отправки в формате ЧЧ:ММ (по Киеву).",
+                reply_markup=CANCEL_KEYBOARD,
+            )
+            return
+
+        if choice == "Настроить сообщение":
+            overview = await _daily_overview()
+            if not overview["messages"]:
+                await update.message.reply_text(
+                    "Список сообщений пуст. Сначала добавьте новое сообщение.",
+                    reply_markup=ReplyKeyboardMarkup(
+                        ADMIN_DAILY_MESSAGE_MENU, resize_keyboard=True
+                    ),
+                )
+                return
+            _set_daily_state(ctx, DAILY_STATE_SELECT)
+            lines = ["Доступные сообщения:"]
+            for entry in overview["messages"]:
+                preview = entry["text"].strip().splitlines()[0] if entry["text"].strip() else "— пусто —"
+                lines.append(f"{entry['id']}. {entry['send_time']} — {preview}")
+            lines.append("")
+            lines.append("Отправьте ID сообщения для настройки или «Отмена».")
+            await update.message.reply_text(
+                "\n".join(lines),
+                reply_markup=CANCEL_KEYBOARD,
+            )
+            return
+
+        await update.message.reply_text(
+            "Пожалуйста, используйте кнопки меню.",
+            reply_markup=ReplyKeyboardMarkup(ADMIN_DAILY_MESSAGE_MENU, resize_keyboard=True),
+        )
+        return
+
+    if state == DAILY_STATE_SELECT:
+        if choice.lower() == "отмена" or choice == ADMIN_BACK_BUTTON:
+            _set_daily_state(ctx, DAILY_STATE_MENU)
+            await _send_daily_menu(update)
+            return
+        if not choice.isdigit():
+            await update.message.reply_text(
+                "Укажите числовой ID сообщения или «Отмена».",
+                reply_markup=CANCEL_KEYBOARD,
+            )
+            return
+        message = await db.get_daily_message(int(choice))
+        if not message:
+            await update.message.reply_text(
+                "Сообщение с таким ID не найдено. Попробуйте снова.",
+                reply_markup=CANCEL_KEYBOARD,
+            )
+            return
+        _set_selected_message(ctx, message["id"])
+        _set_daily_state(ctx, DAILY_STATE_SELECTED)
+        await _send_selected_menu(update, message)
+        return
+
+    if state == DAILY_STATE_SELECTED:
+        message_id = _get_selected_message(ctx)
+        if not message_id:
+            _set_daily_state(ctx, DAILY_STATE_MENU)
+            await _send_daily_menu(update)
+            return
+
+        if choice == ADMIN_BACK_BUTTON:
+            _set_selected_message(ctx, None)
+            _set_daily_state(ctx, DAILY_STATE_MENU)
+            await _send_daily_menu(update)
+            return
+
+        if choice == "Изменить текст":
+            _set_daily_state(ctx, DAILY_STATE_EDIT)
+            _mark_skip_update(ctx, update)
+            await update.message.reply_text(
+                "Отправьте новый текст сообщения. Для очистки используйте «Пусто».",
+                reply_markup=ReplyKeyboardMarkup(
+                    DAILY_MESSAGE_EDIT_KEYBOARD, resize_keyboard=True
+                ),
+            )
+            return
+
+        if choice == "Изменить время":
+            _set_daily_state(ctx, DAILY_STATE_EDIT_TIME)
+            _mark_skip_update(ctx, update)
+            await update.message.reply_text(
+                "Введите новое время в формате ЧЧ:ММ (по Киеву).",
+                reply_markup=CANCEL_KEYBOARD,
+            )
+            return
+
+        if choice == "Форматирование":
+            _set_daily_state(ctx, DAILY_STATE_FORMAT)
+            await update.message.reply_text(
+                "Выберите режим форматирования:",
+                reply_markup=ReplyKeyboardMarkup(
+                    DAILY_MESSAGE_FORMAT_MENU, resize_keyboard=True
+                ),
+            )
+            return
+
+        if choice == "Переключить предпросмотр":
+            message = await db.get_daily_message(message_id)
+            if not message:
+                await update.message.reply_text(
+                    "Сообщение не найдено.",
+                    reply_markup=ReplyKeyboardMarkup(
+                        ADMIN_DAILY_MESSAGE_MENU, resize_keyboard=True
+                    ),
+                )
+                _set_selected_message(ctx, None)
+                _set_daily_state(ctx, DAILY_STATE_MENU)
+                await _send_daily_menu(update)
+                return
+            new_value = not message["disable_preview"]
+            await db.update_daily_message(message_id, disable_preview=new_value)
+            status = "включён" if not new_value else "выключен"
+            await update.message.reply_text(f"Предпросмотр ссылок {status}.")
+            updated = await db.get_daily_message(message_id)
+            if updated:
+                await _send_selected_menu(update, updated)
+            return
+
+        if choice == "Предпросмотр":
+            message = await db.get_daily_message(message_id)
+            if not message or not message["text"].strip():
+                await update.message.reply_text(
+                    "Текст сообщения не задан.",
+                    reply_markup=ReplyKeyboardMarkup(
+                        DAILY_MESSAGE_SELECTED_MENU, resize_keyboard=True
+                    ),
+                )
+                return
+            try:
+                await update.message.reply_text(
+                    message["text"],
+                    parse_mode=message["parse_mode"] or None,
+                    disable_web_page_preview=message["disable_preview"],
+                )
+            except Exception as exc:  # pragma: no cover
+                log.warning(
+                    "Не удалось показать предпросмотр ежедневного сообщения #%s: %s",
+                    message_id,
+                    exc,
+                )
+                await update.message.reply_text(
+                    "Не удалось показать предпросмотр.",
+                    reply_markup=ReplyKeyboardMarkup(
+                        DAILY_MESSAGE_SELECTED_MENU, resize_keyboard=True
+                    ),
+                )
+            return
+
+        if choice == "Удалить сообщение":
+            await db.delete_daily_message(message_id)
+            await update.message.reply_text("Сообщение удалено.")
+            _set_selected_message(ctx, None)
+            _set_daily_state(ctx, DAILY_STATE_MENU)
+            await _refresh_jobs_from_ctx(ctx)
+            await _send_daily_menu(update)
+            return
+
+        await update.message.reply_text(
+            "Пожалуйста, используйте кнопки меню.",
+            reply_markup=ReplyKeyboardMarkup(
+                DAILY_MESSAGE_SELECTED_MENU, resize_keyboard=True
+            ),
+        )
+
+
+async def daily_message_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_admin(update):
+        return
+
+    state = _get_daily_state(ctx)
+    if _should_skip_update(ctx, update):
+        return
+    if state not in {
+        DAILY_STATE_EDIT,
+        DAILY_STATE_ADD_TIME,
+        DAILY_STATE_ADD_TEXT,
+        DAILY_STATE_EDIT_TIME,
+    }:
+        return
+
+    message_id = _get_selected_message(ctx)
+    raw_text = update.message.text or ""
+    choice = raw_text.strip()
+    lowered = choice.lower()
+
+    if state == DAILY_STATE_ADD_TIME:
+        if lowered == "отмена":
+            _set_new_message_time(ctx, None)
+            _set_daily_state(ctx, DAILY_STATE_MENU)
+            await _send_daily_menu(update)
+            return
+        if not _is_valid_time(choice):
+            await update.message.reply_text(
+                "Неверный формат времени. Укажите ЧЧ:ММ.",
+                reply_markup=CANCEL_KEYBOARD,
+            )
+            return
+        _set_new_message_time(ctx, choice)
+        _set_daily_state(ctx, DAILY_STATE_ADD_TEXT)
+        await update.message.reply_text(
+            "Отправьте текст нового сообщения. Для пустого сообщения используйте «Пусто».",
+            reply_markup=ReplyKeyboardMarkup(
+                DAILY_MESSAGE_EDIT_KEYBOARD, resize_keyboard=True
+            ),
+        )
+        return
+
+    if state == DAILY_STATE_ADD_TEXT:
+        if lowered == "отмена":
+            _set_new_message_time(ctx, None)
+            _set_daily_state(ctx, DAILY_STATE_MENU)
+            await _send_daily_menu(update)
+            return
+        send_time = _get_new_message_time(ctx)
+        if send_time is None:
+            _set_daily_state(ctx, DAILY_STATE_MENU)
+            await _send_daily_menu(update)
+            return
+        text_value = "" if lowered == "пусто" else raw_text
+        new_id = await db.add_daily_message(text_value, send_time)
+        await update.message.reply_text("✅ Сообщение добавлено.")
+        _set_new_message_time(ctx, None)
+        _set_selected_message(ctx, new_id)
+        _set_daily_state(ctx, DAILY_STATE_SELECTED)
+        await _refresh_jobs_from_ctx(ctx)
+        message = await db.get_daily_message(new_id)
+        if message:
+            await _send_selected_menu(update, message)
+        else:
+            _set_daily_state(ctx, DAILY_STATE_MENU)
+            await _send_daily_menu(update)
+        return
+
+    if state == DAILY_STATE_EDIT:
+        if lowered == "отмена":
+            _set_daily_state(ctx, DAILY_STATE_SELECTED if message_id else DAILY_STATE_MENU)
+            if message_id:
+                message = await db.get_daily_message(message_id)
+                if message:
+                    await _send_selected_menu(update, message)
+                    return
+            await _send_daily_menu(update)
+            return
+
+        if message_id is None:
+            _set_daily_state(ctx, DAILY_STATE_MENU)
+            await _send_daily_menu(update)
+            return
+
+        text_value = "" if lowered == "пусто" else raw_text
+        await db.update_daily_message(message_id, text=text_value)
+        await update.message.reply_text(
+            "✅ Текст сообщения обновлён." if text_value else "✅ Сообщение очищено."
+        )
+        _set_daily_state(ctx, DAILY_STATE_SELECTED)
+        message = await db.get_daily_message(message_id)
+        if message:
+            await _send_selected_menu(update, message)
+        else:
+            _set_selected_message(ctx, None)
+            _set_daily_state(ctx, DAILY_STATE_MENU)
+            await _send_daily_menu(update)
+        return
+
+    if state == DAILY_STATE_EDIT_TIME:
+        if lowered == "отмена":
+            _set_daily_state(ctx, DAILY_STATE_SELECTED if message_id else DAILY_STATE_MENU)
+            if message_id:
+                message = await db.get_daily_message(message_id)
+                if message:
+                    await _send_selected_menu(update, message)
+                    return
+            await _send_daily_menu(update)
+            return
+        if not _is_valid_time(choice):
+            await update.message.reply_text(
+                "Неверный формат времени. Укажите ЧЧ:ММ.",
+                reply_markup=CANCEL_KEYBOARD,
+            )
+            return
+        if message_id is None:
+            _set_daily_state(ctx, DAILY_STATE_MENU)
+            await _send_daily_menu(update)
+            return
+        await db.update_daily_message(message_id, send_time=choice)
+        await update.message.reply_text(f"Время отправки обновлено на {choice}.")
+        _set_daily_state(ctx, DAILY_STATE_SELECTED)
+        await _refresh_jobs_from_ctx(ctx)
+        message = await db.get_daily_message(message_id)
+        if message:
+            await _send_selected_menu(update, message)
+        else:
+            _set_selected_message(ctx, None)
+            _set_daily_state(ctx, DAILY_STATE_MENU)
+            await _send_daily_menu(update)
+
+
+async def daily_message_set_format(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_admin(update):
+        return
+
+    if _get_daily_state(ctx) != DAILY_STATE_FORMAT:
+        return
+
+    choice = (update.message.text or "").strip()
+    lowered = choice.lower()
+
+    if lowered == "отмена" or choice == ADMIN_BACK_BUTTON:
+        message_id = _get_selected_message(ctx)
+        await update.message.reply_text("Настройка форматирования отменена.")
+        _set_daily_state(ctx, DAILY_STATE_SELECTED if message_id else DAILY_STATE_MENU)
+        if message_id:
+            message = await db.get_daily_message(message_id)
+            if message:
+                await _send_selected_menu(update, message)
+                return
+            _set_selected_message(ctx, None)
+            _set_daily_state(ctx, DAILY_STATE_MENU)
+        await _send_daily_menu(update)
+        return
+
+    modes = {
+        "обычный текст": "",
+        "markdown": "Markdown",
+        "html": "HTML",
+    }
+
+    if lowered not in modes:
+        await update.message.reply_text(
+            "Выберите один из доступных вариантов:",
+            reply_markup=ReplyKeyboardMarkup(
+                DAILY_MESSAGE_FORMAT_MENU, resize_keyboard=True
+            ),
+        )
+        return
+
+    message_id = _get_selected_message(ctx)
+    if message_id is None:
+        _set_daily_state(ctx, DAILY_STATE_MENU)
+        await _send_daily_menu(update)
+        return
+
+    await db.update_daily_message(message_id, parse_mode=modes[lowered])
+    label = "обычный текст" if modes[lowered] == "" else modes[lowered]
+    await update.message.reply_text(f"Форматирование изменено на: {label}.")
+    _set_daily_state(ctx, DAILY_STATE_SELECTED)
+    message = await db.get_daily_message(message_id)
+    if message:
+        await _send_selected_menu(update, message)
+    else:
+        _set_selected_message(ctx, None)
+        _set_daily_state(ctx, DAILY_STATE_MENU)
+        await _send_daily_menu(update)
+
+
 async def status_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -341,8 +913,17 @@ async def clear_requests_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    menu = USER_MAIN_MENU
+    if _is_admin(update):
+        menu = ADMIN_MAIN_MENU
+        if _get_daily_state(ctx):
+            _set_daily_state(ctx, None)
+        _set_selected_message(ctx, None)
+        _set_new_message_time(ctx, None)
+        ctx.user_data.pop(DAILY_SKIP_KEY, None)
+        ctx.user_data.pop("reply_ticket", None)
     await update.message.reply_text(
         "❌ Отменено.",
-        reply_markup=ReplyKeyboardMarkup(USER_MAIN_MENU, resize_keyboard=True),
+        reply_markup=ReplyKeyboardMarkup(menu, resize_keyboard=True),
     )
     return ConversationHandler.END

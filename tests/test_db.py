@@ -9,15 +9,19 @@ async def test_init_db_creates_tables_and_settings(temp_db):
     async with aiosqlite.connect(db.DB_PATH) as conn:
         cur = await conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         tables = {r[0] for r in await cur.fetchall()}
-        assert {'tickets', 'users', 'settings'} <= tables
+        assert {'tickets', 'users', 'settings', 'daily_messages'} <= tables
 
         cur = await conn.execute("PRAGMA table_info(tickets)")
         cols = {r[1] for r in await cur.fetchall()}
         assert {'row_comp', 'problem', 'description', 'user_name', 'user_id', 'status', 'created_at'} <= cols
 
+        cur = await conn.execute("PRAGMA table_info(daily_messages)")
+        daily_cols = {r[1] for r in await cur.fetchall()}
+        assert {'text', 'parse_mode', 'disable_preview', 'send_time'} <= daily_cols
+
         cur = await conn.execute("SELECT key FROM settings")
         settings = {r[0] for r in await cur.fetchall()}
-        assert {'crm_text', 'speech_text'} <= settings
+        assert {'crm_text', 'speech_text', 'daily_message_text', 'daily_message_chat_id'} <= settings
 
 
 @pytest.mark.asyncio
