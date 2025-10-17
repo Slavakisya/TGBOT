@@ -423,6 +423,25 @@ async def daily_message_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
 
     choice = update.message.text.strip()
 
+    # Allow switching to other admin sections even if the operator is still
+    # inside the daily-message workflow. Previously, pressing buttons like
+    # «Заявки» or «Аналитика» after configuring daily messages would be
+    # swallowed by this handler which told the user to "use the menu" again.
+    # Reset the local state and delegate to the appropriate handler instead.
+    shortcuts = {
+        "Заявки": show_tickets_menu,
+        "Аналитика": show_analytics_menu,
+        "Настройки": show_settings_menu,
+    }
+    target = shortcuts.get(choice)
+    if target is not None:
+        _set_daily_state(ctx, None)
+        _set_selected_message(ctx, None)
+        _set_new_message_time(ctx, None)
+        ctx.user_data.pop(DAILY_SKIP_KEY, None)
+        await target(update, ctx)
+        return
+
     if state == DAILY_STATE_MENU:
         if choice == ADMIN_BACK_BUTTON:
             _set_daily_state(ctx, None)
