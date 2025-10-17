@@ -1,6 +1,7 @@
 import asyncio
 import importlib
 import inspect
+import os
 import sys
 from pathlib import Path
 
@@ -10,6 +11,10 @@ try:  # pragma: no cover - exercised implicitly when dependency is installed
     import pytest_asyncio
 except ModuleNotFoundError:  # pragma: no cover - fallback path
     pytest_asyncio = None
+
+# Ensure the lightweight telegram stubs are used during tests even if the real
+# dependency is installed in the environment.
+os.environ.setdefault("HELPDESK_BOT_FORCE_STUB", "1")
 
 # Add project root to sys.path
 sys.path.append(str(Path(__file__).resolve().parent.parent))

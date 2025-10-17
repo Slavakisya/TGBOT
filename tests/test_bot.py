@@ -411,6 +411,133 @@ async def test_daily_message_admin_flow(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_daily_message_back_button_variations(monkeypatch, tmp_path):
+    monkeypatch.setenv('HELPDESK_DB_PATH', str(tmp_path / 'tickets.db'))
+    monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
+    monkeypatch.setenv('ADMIN_IDS', '1')
+
+    for name in [
+        'helpdesk_bot.db',
+        'helpdesk_bot.utils',
+        'helpdesk_bot.handlers.admin',
+    ]:
+        sys.modules.pop(name, None)
+
+    db_mod = importlib.import_module('helpdesk_bot.db')
+    await db_mod.init_db()
+    admin_mod = importlib.import_module('helpdesk_bot.handlers.admin')
+
+    class DummyMessage:
+        def __init__(self, text):
+            self.text = text
+            self.replies = []
+
+        async def reply_text(self, text, reply_markup=None):
+            self.replies.append(text)
+
+    class DummyUser:
+        def __init__(self, user_id):
+            self.id = user_id
+
+    class DummyUpdate:
+        counter = 0
+
+        def __init__(self, text):
+            DummyUpdate.counter += 1
+            self.message = DummyMessage(text)
+            self.effective_user = DummyUser(1)
+            self.update_id = DummyUpdate.counter
+
+    ctx = types.SimpleNamespace(user_data={}, application=types.SimpleNamespace(job_queue=None))
+    update_start = DummyUpdate('start')
+    await admin_mod.daily_message_start(update_start, ctx)
+    assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_MENU
+
+    update_back = DummyUpdate('\u2B05 Назад')
+    await admin_mod.daily_message_menu(update_back, ctx)
+    assert ctx.user_data.get(admin_mod.DAILY_STATE_KEY) is None
+    assert any('настройки' in msg.lower() for msg in update_back.message.replies)
+
+@pytest.mark.asyncio
+async def test_daily_message_menu_allows_admin_shortcuts(monkeypatch, tmp_path):
+    monkeypatch.setenv('HELPDESK_DB_PATH', str(tmp_path / 'tickets.db'))
+    monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
+    monkeypatch.setenv('ADMIN_IDS', '1')
+
+    for name in [
+        'helpdesk_bot.db',
+        'helpdesk_bot.utils',
+        'helpdesk_bot.handlers.admin',
+    ]:
+        sys.modules.pop(name, None)
+
+    importlib.import_module('helpdesk_bot.db')
+    admin_mod = importlib.import_module('helpdesk_bot.handlers.admin')
+
+    class DummyMessage:
+        def __init__(self, text):
+            self.text = text
+            self.replies = []
+
+        async def reply_text(self, text, reply_markup=None):
+            self.replies.append(text)
+
+    class DummyUser:
+        def __init__(self, user_id):
+            self.id = user_id
+
+    class DummyUpdate:
+        counter = 0
+
+        def __init__(self, text):
+            DummyUpdate.counter += 1
+            self.message = DummyMessage(text)
+            self.effective_user = DummyUser(1)
+            self.update_id = DummyUpdate.counter
+
+    shortcuts = [
+        'Заявки',
+        'Аналитика',
+        'Настройки',
+        'Все запросы',
+        'Архив запросов',
+        'Очистить все запросы',
+        'Статистика',
+        'Благодарности',
+        'Изменить CRM',
+        'Изменить спич',
+    ]
+
+    states = [
+        admin_mod.DAILY_STATE_MENU,
+        admin_mod.DAILY_STATE_SELECT,
+        admin_mod.DAILY_STATE_SELECTED,
+        admin_mod.DAILY_STATE_ADD_TIME,
+        admin_mod.DAILY_STATE_ADD_TEXT,
+        admin_mod.DAILY_STATE_EDIT,
+        admin_mod.DAILY_STATE_EDIT_TIME,
+        admin_mod.DAILY_STATE_FORMAT,
+    ]
+
+    for state in states:
+        for text in shortcuts:
+            ctx = types.SimpleNamespace(user_data={}, application=types.SimpleNamespace(job_queue=None))
+            ctx.user_data[admin_mod.DAILY_STATE_KEY] = state
+            ctx.user_data[admin_mod.DAILY_SELECTED_KEY] = 42
+            ctx.user_data[admin_mod.DAILY_NEW_TIME_KEY] = '09:00'
+            ctx.user_data[admin_mod.DAILY_SKIP_KEY] = 999
+
+            update = DummyUpdate(text)
+            await admin_mod.daily_message_menu(update, ctx)
+
+            assert admin_mod.DAILY_STATE_KEY not in ctx.user_data
+            assert admin_mod.DAILY_SELECTED_KEY not in ctx.user_data
+            assert admin_mod.DAILY_NEW_TIME_KEY not in ctx.user_data
+            assert admin_mod.DAILY_SKIP_KEY not in ctx.user_data
+            assert update.message.replies == []
+
+
+@pytest.mark.asyncio
 async def test_send_daily_message(monkeypatch, tmp_path):
     monkeypatch.setenv('HELPDESK_DB_PATH', str(tmp_path / 'tickets.db'))
     monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
