@@ -45,6 +45,27 @@ DAILY_NEW_TIME_KEY = "daily_message_new_time"
 DAILY_SKIP_KEY = "daily_message_skip_update"
 
 
+def _normalize_button_text(value: str | None) -> str:
+    if not value:
+        return ""
+    cleaned = value.replace("\uFE0F", "").strip()
+    if cleaned.startswith("⬅") and not cleaned.startswith("⬅ "):
+        cleaned = "⬅ " + cleaned[1:].lstrip()
+    return " ".join(cleaned.split())
+
+
+_BACK_BUTTON_CANONICAL = _normalize_button_text(ADMIN_BACK_BUTTON)
+
+# Allow matching keyboards that omit the emoji variation selector or the space
+# between the arrow icon and the label.
+BACK_BUTTON_PATTERN = rf"^⬅\ufe0f?\s*{_BACK_BUTTON_CANONICAL.split(' ', 1)[-1]}$"
+
+
+def _is_back_button(value: str | None) -> bool:
+    normalized = _normalize_button_text(value)
+    return normalized in {_BACK_BUTTON_CANONICAL, "Назад"}
+
+
 def _set_daily_state(ctx: ContextTypes.DEFAULT_TYPE, value: str | None) -> None:
     if value is None:
         ctx.user_data.pop(DAILY_STATE_KEY, None)
@@ -443,7 +464,7 @@ async def daily_message_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     if state == DAILY_STATE_MENU:
-        if choice == ADMIN_BACK_BUTTON:
+        if _is_back_button(choice):
             _set_daily_state(ctx, None)
             await show_settings_menu(update, ctx)
             return
@@ -487,7 +508,7 @@ async def daily_message_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     if state == DAILY_STATE_SELECT:
-        if choice.lower() == "отмена" or choice == ADMIN_BACK_BUTTON:
+        if choice.lower() == "отмена" or _is_back_button(choice):
             _set_daily_state(ctx, DAILY_STATE_MENU)
             await _send_daily_menu(update)
             return
@@ -516,7 +537,7 @@ async def daily_message_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
             await _send_daily_menu(update)
             return
 
-        if choice == ADMIN_BACK_BUTTON:
+        if _is_back_button(choice):
             _set_selected_message(ctx, None)
             _set_daily_state(ctx, DAILY_STATE_MENU)
             await _send_daily_menu(update)
@@ -763,7 +784,7 @@ async def daily_message_set_format(update: Update, ctx: ContextTypes.DEFAULT_TYP
     choice = (update.message.text or "").strip()
     lowered = choice.lower()
 
-    if lowered == "отмена" or choice == ADMIN_BACK_BUTTON:
+    if lowered == "отмена" or _is_back_button(choice):
         message_id = _get_selected_message(ctx)
         await update.message.reply_text("Настройка форматирования отменена.")
         _set_daily_state(ctx, DAILY_STATE_SELECTED if message_id else DAILY_STATE_MENU)
