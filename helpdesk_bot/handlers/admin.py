@@ -61,6 +61,23 @@ _BACK_BUTTON_CANONICAL = _normalize_button_text(ADMIN_BACK_BUTTON)
 BACK_BUTTON_PATTERN = rf"^⬅\ufe0f?\s*{_BACK_BUTTON_CANONICAL.split(' ', 1)[-1]}$"
 
 
+_ADMIN_ESCAPE_BUTTONS = {
+    _normalize_button_text(value)
+    for value in [
+        "Заявки",
+        "Аналитика",
+        "Настройки",
+        "Все запросы",
+        "Архив запросов",
+        "Очистить все запросы",
+        "Статистика",
+        "Благодарности",
+        "Изменить CRM",
+        "Изменить спич",
+    ]
+}
+
+
 def _is_back_button(value: str | None) -> bool:
     normalized = _normalize_button_text(value)
     return normalized in {_BACK_BUTTON_CANONICAL, "Назад"}
@@ -93,6 +110,13 @@ def _set_new_message_time(ctx: ContextTypes.DEFAULT_TYPE, value: str | None) -> 
         ctx.user_data.pop(DAILY_NEW_TIME_KEY, None)
     else:
         ctx.user_data[DAILY_NEW_TIME_KEY] = value
+
+
+def _reset_daily_workflow(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    _set_daily_state(ctx, None)
+    _set_selected_message(ctx, None)
+    _set_new_message_time(ctx, None)
+    ctx.user_data.pop(DAILY_SKIP_KEY, None)
 
 
 def _get_new_message_time(ctx: ContextTypes.DEFAULT_TYPE) -> str | None:
@@ -198,10 +222,7 @@ async def show_analytics_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
 async def show_settings_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_admin(update):
         return
-    _set_daily_state(ctx, None)
-    _set_selected_message(ctx, None)
-    _set_new_message_time(ctx, None)
-    ctx.user_data.pop(DAILY_SKIP_KEY, None)
+    _reset_daily_workflow(ctx)
     await update.message.reply_text(
         "Раздел «Настройки». Выберите действие:",
         reply_markup=ReplyKeyboardMarkup(ADMIN_SETTINGS_MENU, resize_keyboard=True),
@@ -211,11 +232,7 @@ async def show_settings_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
 async def back_to_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_admin(update):
         return
-    if _get_daily_state(ctx):
-        _set_daily_state(ctx, None)
-    _set_selected_message(ctx, None)
-    _set_new_message_time(ctx, None)
-    ctx.user_data.pop(DAILY_SKIP_KEY, None)
+    _reset_daily_workflow(ctx)
     await update.message.reply_text(
         "Меню администратора:",
         reply_markup=ReplyKeyboardMarkup(ADMIN_MAIN_MENU, resize_keyboard=True),
@@ -427,10 +444,8 @@ async def _send_selected_menu(update: Update, message: dict) -> None:
 async def daily_message_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_admin(update):
         return
+    _reset_daily_workflow(ctx)
     _set_daily_state(ctx, DAILY_STATE_MENU)
-    _set_selected_message(ctx, None)
-    _set_new_message_time(ctx, None)
-    ctx.user_data.pop(DAILY_SKIP_KEY, None)
     await _send_daily_menu(update)
 
 
@@ -439,10 +454,25 @@ async def daily_message_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     state = _get_daily_state(ctx)
-    if state in {None, DAILY_STATE_EDIT, DAILY_STATE_ADD_TIME, DAILY_STATE_ADD_TEXT, DAILY_STATE_EDIT_TIME, DAILY_STATE_FORMAT}:
+    if state is None:
         return
 
-    choice = update.message.text.strip()
+    raw_choice = update.message.text or ""
+    choice = raw_choice.strip()
+    normalized_choice = _normalize_button_text(choice)
+
+    if normalized_choice in _ADMIN_ESCAPE_BUTTONS:
+        _reset_daily_workflow(ctx)
+        return
+
+    if state in {
+        DAILY_STATE_EDIT,
+        DAILY_STATE_ADD_TIME,
+        DAILY_STATE_ADD_TEXT,
+        DAILY_STATE_EDIT_TIME,
+        DAILY_STATE_FORMAT,
+    }:
+        return
 
     # Allow switching to other admin sections even if the operator is still
     # inside the daily-message workflow. Previously, pressing buttons like
@@ -960,10 +990,7 @@ async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     if _is_admin(update):
         menu = ADMIN_MAIN_MENU
         if _get_daily_state(ctx):
-            _set_daily_state(ctx, None)
-        _set_selected_message(ctx, None)
-        _set_new_message_time(ctx, None)
-        ctx.user_data.pop(DAILY_SKIP_KEY, None)
+            _reset_daily_workflow(ctx)
         ctx.user_data.pop("reply_ticket", None)
     await update.message.reply_text(
         "❌ Отменено.",
