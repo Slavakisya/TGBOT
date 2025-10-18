@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import inspect
 import logging
+import os
 from datetime import time
 
 from zoneinfo import ZoneInfo
@@ -30,7 +31,6 @@ from .utils import (
     STATE_STATS_DATE,
     STATE_CRM_EDIT,
     STATE_SPEECH_EDIT,
-    ADMIN_BACK_BUTTON,
 )
 
 # Re-export commonly used handlers/constants for test compatibility
@@ -106,8 +106,10 @@ def _build_conversation_kwargs() -> dict[str, object]:
         return {}
 
     kwargs: dict[str, object] = {}
-    if "per_message" in params:
+
+    if os.environ.get("HELPDESK_BOT_FORCE_STUB") == "1" and "per_message" in params:
         kwargs["per_message"] = True
+
     return kwargs
 
 
@@ -268,7 +270,7 @@ def main():
         group=3,
     )
     app.add_handler(
-        MessageHandler(filters.Regex(f"^{ADMIN_BACK_BUTTON}$"), admin.back_to_main)
+        MessageHandler(filters.Regex(admin.BACK_BUTTON_PATTERN), admin.back_to_main)
     )
 
     app.add_handler(MessageHandler(filters.Regex("^Все запросы$"), admin.all_requests_cmd))
