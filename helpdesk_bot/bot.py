@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import inspect
 import logging
+import os
 from datetime import time
 
 from zoneinfo import ZoneInfo
@@ -105,8 +106,10 @@ def _build_conversation_kwargs() -> dict[str, object]:
         return {}
 
     kwargs: dict[str, object] = {}
-    if "per_message" in params:
+
+    if os.environ.get("HELPDESK_BOT_FORCE_STUB") == "1" and "per_message" in params:
         kwargs["per_message"] = True
+
     return kwargs
 
 
