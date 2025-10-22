@@ -158,6 +158,7 @@ def main():
         entry_points=[MessageHandler(filters.Regex("^Архив запросов$"), admin.init_archive)],
         states={
             STATE_ARCHIVE_DATE: [
+                MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
                 MessageHandler(filters.Regex(r"^\\d{4}-\\d{2}-\\d{2}$"), admin.archive_by_date_handler),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin.archive_date_invalid),
             ],
