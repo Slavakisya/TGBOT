@@ -158,6 +158,7 @@ def main():
         entry_points=[MessageHandler(filters.Regex("^Архив запросов$"), admin.init_archive)],
         states={
             STATE_ARCHIVE_DATE: [
+                MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
                 MessageHandler(filters.Regex(r"^\\d{4}-\\d{2}-\\d{2}$"), admin.archive_by_date_handler),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin.archive_date_invalid),
             ],
@@ -233,22 +234,8 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^Ежедневные сообщения$"), admin.daily_message_start))
     app.add_handler(
         MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            admin.daily_message_menu,
-            block=False,
-        )
-    )
-    app.add_handler(
-        MessageHandler(
             filters.Regex("^(Обычный текст|Markdown|HTML|Отмена)$"),
             admin.daily_message_set_format,
-            block=False,
-        )
-    )
-    app.add_handler(
-        MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
-            admin.daily_message_save,
             block=False,
         ),
         group=1,
@@ -256,7 +243,7 @@ def main():
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
-            admin.handle_reply,
+            admin.daily_message_menu,
             block=False,
         ),
         group=2,
@@ -264,10 +251,26 @@ def main():
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
-            tickets.handle_feedback_text,
+            admin.daily_message_save,
             block=False,
         ),
         group=3,
+    )
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            admin.handle_reply,
+            block=False,
+        ),
+        group=4,
+    )
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            tickets.handle_feedback_text,
+            block=False,
+        ),
+        group=5,
     )
     app.add_handler(
         MessageHandler(filters.Regex(admin.BACK_BUTTON_PATTERN), admin.back_to_main)
