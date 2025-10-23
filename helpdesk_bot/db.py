@@ -17,6 +17,19 @@ SPEECH_PATH = Path(__file__).resolve().parent / "data" / "default_speech.txt"
 log = logging.getLogger(__name__)
 
 
+PREDICTIONS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS predictions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text TEXT NOT NULL
+    )
+"""
+
+
+async def _ensure_predictions_table(conn) -> None:
+    """Create the predictions table if it does not exist."""
+    await conn.execute(PREDICTIONS_TABLE_SQL)
+
+
 async def init_db():
     """
     Создаёт таблицы tickets, users и settings, если их нет,
@@ -74,14 +87,7 @@ async def init_db():
             )
             """
         )
-        await conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS predictions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                text TEXT NOT NULL
-            )
-            """
-        )
+        await conn.execute(PREDICTIONS_TABLE_SQL)
         # дефолтные тексты CRM и спича
         try:
             default_crm = CRM_PATH.read_text(encoding="utf-8")
@@ -265,6 +271,7 @@ async def delete_daily_message(message_id: int) -> None:
 
 async def list_predictions() -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as conn:
+        await _ensure_predictions_table(conn)
         cur = await conn.execute(
             "SELECT id, text FROM predictions ORDER BY id"
         )
@@ -274,6 +281,7 @@ async def list_predictions() -> list[dict]:
 
 async def get_prediction(prediction_id: int) -> dict | None:
     async with aiosqlite.connect(DB_PATH) as conn:
+        await _ensure_predictions_table(conn)
         cur = await conn.execute(
             "SELECT id, text FROM predictions WHERE id = ?",
             (prediction_id,),
@@ -286,6 +294,7 @@ async def get_prediction(prediction_id: int) -> dict | None:
 
 async def add_prediction(text: str) -> int:
     async with aiosqlite.connect(DB_PATH) as conn:
+        await _ensure_predictions_table(conn)
         cur = await conn.execute(
             "INSERT INTO predictions(text) VALUES(?)",
             (text,),
@@ -296,6 +305,7 @@ async def add_prediction(text: str) -> int:
 
 async def update_prediction(prediction_id: int, text: str) -> None:
     async with aiosqlite.connect(DB_PATH) as conn:
+        await _ensure_predictions_table(conn)
         await conn.execute(
             "UPDATE predictions SET text = ? WHERE id = ?",
             (text, prediction_id),
@@ -305,6 +315,7 @@ async def update_prediction(prediction_id: int, text: str) -> None:
 
 async def delete_prediction(prediction_id: int) -> None:
     async with aiosqlite.connect(DB_PATH) as conn:
+        await _ensure_predictions_table(conn)
         await conn.execute(
             "DELETE FROM predictions WHERE id = ?",
             (prediction_id,),
@@ -314,6 +325,7 @@ async def delete_prediction(prediction_id: int) -> None:
 
 async def get_random_prediction() -> str | None:
     async with aiosqlite.connect(DB_PATH) as conn:
+        await _ensure_predictions_table(conn)
         cur = await conn.execute(
             "SELECT text FROM predictions ORDER BY RANDOM() LIMIT 1"
         )

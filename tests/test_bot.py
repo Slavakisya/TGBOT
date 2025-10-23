@@ -1,6 +1,7 @@
 import types
 import importlib
 import sys
+import sqlite3
 from datetime import timezone, timedelta
 from pathlib import Path
 import logging
@@ -647,6 +648,26 @@ async def test_admin_handle_reply_cancel(monkeypatch, admin):
 
     assert 'reply_ticket' not in ctx.user_data
     assert called['cancelled'] is True
+
+
+@pytest.mark.asyncio
+async def test_predictions_table_autocreation(monkeypatch, tmp_path):
+    monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
+    monkeypatch.setenv('ADMIN_IDS', '1')
+    monkeypatch.setenv('HELPDESK_DB_PATH', str(tmp_path / 'auto.db'))
+
+    sys.modules.pop('helpdesk_bot.db', None)
+
+    db_mod = importlib.import_module('helpdesk_bot.db')
+
+    predictions = await db_mod.list_predictions()
+    assert predictions == []
+
+    with sqlite3.connect(tmp_path / 'auto.db') as conn:
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='predictions'"
+        )
+        assert cursor.fetchone() is not None
 
 
 @pytest.mark.asyncio
