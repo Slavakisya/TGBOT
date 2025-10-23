@@ -55,6 +55,7 @@ PREDICTION_STATE_SELECTED = "pred_selected"
 PREDICTION_STATE_EDIT = "pred_edit"
 
 PREDICTION_SELECTED_KEY = "prediction_selected_id"
+PREDICTION_SKIP_SAVE_KEY = "prediction_skip_save"
 
 
 def _normalize_button_text(value: str | None) -> str:
@@ -73,8 +74,10 @@ _BACK_BUTTON_CANONICAL = _normalize_button_text(ADMIN_BACK_BUTTON)
 BACK_BUTTON_PATTERN = rf"^⬅\ufe0f?\s*{_BACK_BUTTON_CANONICAL.split(' ', 1)[-1]}$"
 
 
+_PREDICTIONS_MENU_ENTRY = _normalize_button_text("Предсказания")
+
 _ADMIN_ESCAPE_BUTTONS = {
-    _normalize_button_text(value)
+    normalized
     for value in [
         "Заявки",
         "Аналитика",
@@ -87,10 +90,9 @@ _ADMIN_ESCAPE_BUTTONS = {
         "Изменить CRM",
         "Изменить спич",
         "Предсказания",
-        "Добавить предсказание",
-        "Настроить предсказание",
-        "Удалить предсказание",
     ]
+    for normalized in [_normalize_button_text(value)]
+    if normalized != _PREDICTIONS_MENU_ENTRY
 }
 
 
@@ -166,6 +168,14 @@ def _get_selected_prediction(ctx: ContextTypes.DEFAULT_TYPE) -> int | None:
 def _reset_prediction_workflow(ctx: ContextTypes.DEFAULT_TYPE) -> None:
     _set_prediction_state(ctx, None)
     _set_selected_prediction(ctx, None)
+
+
+def _mark_skip_prediction_save(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    ctx.user_data[PREDICTION_SKIP_SAVE_KEY] = True
+
+
+def _should_skip_prediction_save(ctx: ContextTypes.DEFAULT_TYPE) -> bool:
+    return bool(ctx.user_data.pop(PREDICTION_SKIP_SAVE_KEY, None))
 
 
 def _get_new_message_time(ctx: ContextTypes.DEFAULT_TYPE) -> str | None:
@@ -247,38 +257,52 @@ async def predictions_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
     await _send_predictions_menu(update)
 
 
-async def predictions_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+async def predictions_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
     if not _is_admin(update):
-        return
+        return False
 
     state = _get_prediction_state(ctx)
     if state is None:
-        return
+        return False
 
     raw_choice = update.message.text or ""
     choice = raw_choice.strip()
     normalized_choice = _normalize_button_text(choice)
+    ctx.user_data.pop(PREDICTION_SKIP_SAVE_KEY, None)
+
+    if normalized_choice == _PREDICTIONS_MENU_ENTRY:
+        _mark_skip_prediction_save(ctx)
+        return True
+    is_menu_choice = normalized_choice in {
+        _PREDICTION_ADD_BUTTON,
+        _PREDICTION_CONFIGURE_BUTTON,
+        _PREDICTION_EDIT_BUTTON,
+        _PREDICTION_DELETE_BUTTON,
+    } or _is_back_button(choice)
 
     if normalized_choice in _ADMIN_ESCAPE_BUTTONS:
         _reset_prediction_workflow(ctx)
-        return
+        _mark_skip_prediction_save(ctx)
+        return True
 
     if state in {PREDICTION_STATE_ADD, PREDICTION_STATE_EDIT}:
-        return
+        if not is_menu_choice:
+            return False
 
-    if state == PREDICTION_STATE_MENU:
         if _is_back_button(choice):
             _reset_prediction_workflow(ctx)
             await show_settings_menu(update, ctx)
-            return
+            _mark_skip_prediction_save(ctx)
+            return True
 
-        if normalized_choice == _PREDICTION_ADD_BUTTON:
+        if normalized_choice == _PREDICTION_ADD_BUTTON and state == PREDICTION_STATE_ADD:
             _set_prediction_state(ctx, PREDICTION_STATE_ADD)
             await update.message.reply_text(
                 "Отправьте текст нового предсказания.",
                 reply_markup=CANCEL_KEYBOARD,
             )
-            return
+            _mark_skip_prediction_save(ctx)
+            return True
 
         if normalized_choice == _PREDICTION_CONFIGURE_BUTTON:
             predictions = await db.list_predictions()
@@ -289,7 +313,9 @@ async def predictions_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                         ADMIN_PREDICTIONS_MENU, resize_keyboard=True
                     ),
                 )
-                return
+                _set_prediction_state(ctx, PREDICTION_STATE_MENU)
+                _mark_skip_prediction_save(ctx)
+                return True
             _set_prediction_state(ctx, PREDICTION_STATE_SELECT)
             lines = ["Доступные предсказания:"]
             for entry in predictions:
@@ -303,7 +329,83 @@ async def predictions_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                 "\n".join(lines),
                 reply_markup=CANCEL_KEYBOARD,
             )
-            return
+            _mark_skip_prediction_save(ctx)
+            return True
+
+        if normalized_choice == _PREDICTION_EDIT_BUTTON and state == PREDICTION_STATE_EDIT:
+            await update.message.reply_text(
+                "Отправьте новый текст предсказания.",
+                reply_markup=CANCEL_KEYBOARD,
+            )
+            _mark_skip_prediction_save(ctx)
+            return True
+
+        if normalized_choice == _PREDICTION_DELETE_BUTTON and state == PREDICTION_STATE_EDIT:
+            prediction_id = _get_selected_prediction(ctx)
+            if prediction_id:
+                await db.delete_prediction(prediction_id)
+                await update.message.reply_text("✅ Предсказание удалено.")
+            _set_selected_prediction(ctx, None)
+            _set_prediction_state(ctx, PREDICTION_STATE_MENU)
+            await _send_predictions_menu(update)
+            _mark_skip_prediction_save(ctx)
+            return True
+
+        if state == PREDICTION_STATE_ADD:
+            await update.message.reply_text(
+                "Пожалуйста, отправьте текст нового предсказания или «Отмена».",
+                reply_markup=CANCEL_KEYBOARD,
+            )
+        else:
+            await update.message.reply_text(
+                "Пожалуйста, отправьте новый текст предсказания или «Отмена».",
+                reply_markup=CANCEL_KEYBOARD,
+            )
+        _mark_skip_prediction_save(ctx)
+        return True
+
+    if state == PREDICTION_STATE_MENU:
+        if _is_back_button(choice):
+            _reset_prediction_workflow(ctx)
+            await show_settings_menu(update, ctx)
+            _mark_skip_prediction_save(ctx)
+            return True
+
+        if normalized_choice == _PREDICTION_ADD_BUTTON:
+            _set_prediction_state(ctx, PREDICTION_STATE_ADD)
+            await update.message.reply_text(
+                "Отправьте текст нового предсказания.",
+                reply_markup=CANCEL_KEYBOARD,
+            )
+            _mark_skip_prediction_save(ctx)
+            return True
+
+        if normalized_choice == _PREDICTION_CONFIGURE_BUTTON:
+            predictions = await db.list_predictions()
+            if not predictions:
+                await update.message.reply_text(
+                    "Список предсказаний пуст. Сначала добавьте предсказание.",
+                    reply_markup=ReplyKeyboardMarkup(
+                        ADMIN_PREDICTIONS_MENU, resize_keyboard=True
+                    ),
+                )
+                _mark_skip_prediction_save(ctx)
+                return True
+            _set_prediction_state(ctx, PREDICTION_STATE_SELECT)
+            lines = ["Доступные предсказания:"]
+            for entry in predictions:
+                preview = entry["text"].strip().splitlines()[0] if entry["text"].strip() else "— пусто —"
+                if len(preview) > 100:
+                    preview = preview[:97] + "…"
+                lines.append(f"{entry['id']}. {preview}")
+            lines.append("")
+            lines.append("Отправьте ID предсказания для настройки или «Отмена».")
+            await update.message.reply_text(
+                "\n".join(lines),
+                reply_markup=CANCEL_KEYBOARD,
+            )
+            _mark_skip_prediction_save(ctx)
+            return True
 
         await update.message.reply_text(
             "Пожалуйста, используйте кнопки меню.",
@@ -311,43 +413,50 @@ async def predictions_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                 ADMIN_PREDICTIONS_MENU, resize_keyboard=True
             ),
         )
-        return
+        _mark_skip_prediction_save(ctx)
+        return True
 
     if state == PREDICTION_STATE_SELECT:
         if choice.lower() == "отмена" or _is_back_button(choice):
             _set_prediction_state(ctx, PREDICTION_STATE_MENU)
             await _send_predictions_menu(update)
-            return
+            _mark_skip_prediction_save(ctx)
+            return True
         if not choice.isdigit():
             await update.message.reply_text(
                 "Укажите числовой ID предсказания или «Отмена».",
                 reply_markup=CANCEL_KEYBOARD,
             )
-            return
+            _mark_skip_prediction_save(ctx)
+            return True
         prediction = await db.get_prediction(int(choice))
         if not prediction:
             await update.message.reply_text(
                 "Предсказание с таким ID не найдено. Попробуйте снова.",
                 reply_markup=CANCEL_KEYBOARD,
             )
-            return
+            _mark_skip_prediction_save(ctx)
+            return True
         _set_selected_prediction(ctx, prediction["id"])
         _set_prediction_state(ctx, PREDICTION_STATE_SELECTED)
         await _send_prediction_selected_menu(update, prediction)
-        return
+        _mark_skip_prediction_save(ctx)
+        return True
 
     if state == PREDICTION_STATE_SELECTED:
         prediction_id = _get_selected_prediction(ctx)
         if not prediction_id:
             _set_prediction_state(ctx, PREDICTION_STATE_MENU)
             await _send_predictions_menu(update)
-            return
+            _mark_skip_prediction_save(ctx)
+            return True
 
         if _is_back_button(choice):
             _set_selected_prediction(ctx, None)
             _set_prediction_state(ctx, PREDICTION_STATE_MENU)
             await _send_predictions_menu(update)
-            return
+            _mark_skip_prediction_save(ctx)
+            return True
 
         if normalized_choice == _PREDICTION_EDIT_BUTTON:
             _set_prediction_state(ctx, PREDICTION_STATE_EDIT)
@@ -355,7 +464,8 @@ async def predictions_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                 "Отправьте новый текст предсказания.",
                 reply_markup=CANCEL_KEYBOARD,
             )
-            return
+            _mark_skip_prediction_save(ctx)
+            return True
 
         if normalized_choice == _PREDICTION_DELETE_BUTTON:
             await db.delete_prediction(prediction_id)
@@ -363,7 +473,8 @@ async def predictions_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             _set_selected_prediction(ctx, None)
             _set_prediction_state(ctx, PREDICTION_STATE_MENU)
             await _send_predictions_menu(update)
-            return
+            _mark_skip_prediction_save(ctx)
+            return True
 
         await update.message.reply_text(
             "Пожалуйста, используйте кнопки меню.",
@@ -371,11 +482,17 @@ async def predictions_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                 PREDICTION_SELECTED_MENU, resize_keyboard=True
             ),
         )
-        return
+        _mark_skip_prediction_save(ctx)
+        return True
+
+    return False
 
 
 async def predictions_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_admin(update):
+        return
+
+    if _should_skip_prediction_save(ctx):
         return
 
     state = _get_prediction_state(ctx)
