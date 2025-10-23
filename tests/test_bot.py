@@ -1,6 +1,7 @@
 import types
 import importlib
 import sys
+import sqlite3
 from datetime import timezone, timedelta
 from pathlib import Path
 import logging
@@ -29,6 +30,13 @@ def admin(utils):
     if 'helpdesk_bot.handlers.admin' in sys.modules:
         del sys.modules['helpdesk_bot.handlers.admin']
     return importlib.import_module('helpdesk_bot.handlers.admin')
+
+
+@pytest.fixture
+def predictions(utils):
+    if 'helpdesk_bot.predictions' in sys.modules:
+        del sys.modules['helpdesk_bot.predictions']
+    return importlib.import_module('helpdesk_bot.predictions')
 
 
 def test_help_text_files_missing(monkeypatch, caplog):
@@ -640,6 +648,181 @@ async def test_admin_handle_reply_cancel(monkeypatch, admin):
 
     assert 'reply_ticket' not in ctx.user_data
     assert called['cancelled'] is True
+
+
+@pytest.mark.asyncio
+async def test_predictions_table_autocreation(monkeypatch, tmp_path):
+    monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
+    monkeypatch.setenv('ADMIN_IDS', '1')
+    monkeypatch.setenv('HELPDESK_DB_PATH', str(tmp_path / 'auto.db'))
+
+    sys.modules.pop('helpdesk_bot.db', None)
+
+    db_mod = importlib.import_module('helpdesk_bot.db')
+
+    predictions = await db_mod.list_predictions()
+    assert predictions == []
+
+    with sqlite3.connect(tmp_path / 'auto.db') as conn:
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='predictions'"
+        )
+        assert cursor.fetchone() is not None
+
+
+@pytest.mark.asyncio
+async def test_predictions_menu_normalizes_buttons(monkeypatch, tmp_path):
+    monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
+    monkeypatch.setenv('ADMIN_IDS', '1')
+    monkeypatch.setenv('HELPDESK_DB_PATH', str(tmp_path / 'preds.db'))
+
+    for name in [
+        'helpdesk_bot.db',
+        'helpdesk_bot.utils',
+        'helpdesk_bot.handlers.admin',
+    ]:
+        sys.modules.pop(name, None)
+
+    db_mod = importlib.import_module('helpdesk_bot.db')
+    admin_mod = importlib.import_module('helpdesk_bot.handlers.admin')
+
+    await db_mod.init_db()
+
+    class DummyMessage:
+        def __init__(self, text):
+            self.text = text
+            self.replies: list[str] = []
+
+        async def reply_text(self, text, reply_markup=None):
+            self.replies.append(text)
+
+    class DummyUser:
+        def __init__(self, user_id):
+            self.id = user_id
+
+    class DummyUpdate:
+        counter = 0
+
+        def __init__(self, text):
+            DummyUpdate.counter += 1
+            self.message = DummyMessage(text)
+            self.effective_user = DummyUser(1)
+            self.update_id = DummyUpdate.counter
+
+    ctx = types.SimpleNamespace(user_data={}, application=types.SimpleNamespace(job_queue=None))
+
+    update_start = DummyUpdate('Предсказания')
+    await admin_mod.predictions_start(update_start, ctx)
+    assert ctx.user_data[admin_mod.PREDICTION_STATE_KEY] == admin_mod.PREDICTION_STATE_MENU
+
+    update_add = DummyUpdate('  Добавить   предсказание  ')
+    await admin_mod.predictions_menu(update_add, ctx)
+    assert ctx.user_data[admin_mod.PREDICTION_STATE_KEY] == admin_mod.PREDICTION_STATE_ADD
+    assert any('нового предсказания' in msg.lower() for msg in update_add.message.replies)
+
+    update_save = DummyUpdate('Первое предсказание')
+    await admin_mod.predictions_save(update_save, ctx)
+    assert ctx.user_data[admin_mod.PREDICTION_STATE_KEY] == admin_mod.PREDICTION_STATE_MENU
+    predictions = await db_mod.list_predictions()
+    assert len(predictions) == 1
+
+    update_config = DummyUpdate(' Настроить   предсказание ')
+    await admin_mod.predictions_menu(update_config, ctx)
+    assert ctx.user_data[admin_mod.PREDICTION_STATE_KEY] == admin_mod.PREDICTION_STATE_SELECT
+    assert any('доступные предсказания' in msg.lower() for msg in update_config.message.replies)
+
+    update_select = DummyUpdate('1')
+    await admin_mod.predictions_menu(update_select, ctx)
+    assert ctx.user_data[admin_mod.PREDICTION_STATE_KEY] == admin_mod.PREDICTION_STATE_SELECTED
+    assert any('#1' in msg for msg in update_select.message.replies)
+
+    update_edit = DummyUpdate('  Изменить   текст  ')
+    await admin_mod.predictions_menu(update_edit, ctx)
+    assert ctx.user_data[admin_mod.PREDICTION_STATE_KEY] == admin_mod.PREDICTION_STATE_EDIT
+    assert any('новый текст' in msg.lower() for msg in update_edit.message.replies)
+
+
+@pytest.mark.asyncio
+async def test_wish_command_without_predictions(predictions, monkeypatch):
+    async def fake_random():
+        return None
+
+    monkeypatch.setattr(predictions.db, 'get_random_prediction', fake_random)
+
+    class DummyMessage:
+        def __init__(self):
+            self.replies = []
+
+        async def reply_text(self, text):
+            self.replies.append(text)
+
+    message = DummyMessage()
+    chat = types.SimpleNamespace(type="group")
+    update = types.SimpleNamespace(
+        effective_chat=chat,
+        effective_message=message,
+        message=message,
+    )
+    ctx = types.SimpleNamespace()
+
+    await predictions.wish_command(update, ctx)
+
+    assert message.replies == ["Предсказаний пока нет."]
+
+
+@pytest.mark.asyncio
+async def test_wish_command_with_prediction(predictions, monkeypatch):
+    async def fake_random():
+        return "  Улыбнись миру  "
+
+    monkeypatch.setattr(predictions.db, 'get_random_prediction', fake_random)
+
+    class DummyMessage:
+        def __init__(self):
+            self.replies = []
+
+        async def reply_text(self, text):
+            self.replies.append(text)
+
+    message = DummyMessage()
+    chat = types.SimpleNamespace(type="group")
+    update = types.SimpleNamespace(
+        effective_chat=chat,
+        effective_message=message,
+        message=message,
+    )
+    ctx = types.SimpleNamespace()
+
+    await predictions.wish_command(update, ctx)
+
+    assert message.replies == ["Улыбнись миру"]
+
+
+@pytest.mark.asyncio
+async def test_broadcast_predictions(predictions, monkeypatch):
+    async def fake_list_predictions():
+        return [
+            {"id": 1, "text": "Счастья и удачи"},
+        ]
+
+    async def fake_list_users():
+        return [101, 202]
+
+    monkeypatch.setattr(predictions.db, 'list_predictions', fake_list_predictions)
+    monkeypatch.setattr(predictions.db, 'list_users', fake_list_users)
+    monkeypatch.setattr(predictions.random, 'choice', lambda seq: seq[0])
+
+    sent = []
+
+    class DummyBot:
+        async def send_message(self, user_id, text):
+            sent.append((user_id, text))
+
+    ctx = types.SimpleNamespace(bot=DummyBot())
+
+    await predictions.broadcast_predictions(ctx)
+
+    assert sent == [(101, "Счастья и удачи"), (202, "Счастья и удачи")]
 
 
 @pytest.mark.asyncio
