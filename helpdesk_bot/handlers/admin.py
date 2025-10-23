@@ -275,6 +275,15 @@ async def predictions_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bo
         _PREDICTION_DELETE_BUTTON,
     } or _is_back_button(choice)
 
+    if normalized_choice == _PREDICTIONS_MENU_ENTRY:
+        return True
+    is_menu_choice = normalized_choice in {
+        _PREDICTION_ADD_BUTTON,
+        _PREDICTION_CONFIGURE_BUTTON,
+        _PREDICTION_EDIT_BUTTON,
+        _PREDICTION_DELETE_BUTTON,
+    } or _is_back_button(choice)
+
     if normalized_choice in _ADMIN_ESCAPE_BUTTONS:
         _reset_prediction_workflow(ctx)
         return True
@@ -288,7 +297,7 @@ async def predictions_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bo
             await show_settings_menu(update, ctx)
             return True
 
-        if normalized_choice == _PREDICTION_ADD_BUTTON:
+        if normalized_choice == _PREDICTION_ADD_BUTTON and state == PREDICTION_STATE_ADD:
             _set_prediction_state(ctx, PREDICTION_STATE_ADD)
             await update.message.reply_text(
                 "Отправьте текст нового предсказания.",
@@ -339,10 +348,16 @@ async def predictions_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bo
             await _send_predictions_menu(update)
             return True
 
-        await update.message.reply_text(
-            "Сейчас бот ждёт текст предсказания. Отправьте текст или нажмите «Отмена».",
-            reply_markup=CANCEL_KEYBOARD,
-        )
+        if state == PREDICTION_STATE_ADD:
+            await update.message.reply_text(
+                "Пожалуйста, отправьте текст нового предсказания или «Отмена».",
+                reply_markup=CANCEL_KEYBOARD,
+            )
+        else:
+            await update.message.reply_text(
+                "Пожалуйста, отправьте новый текст предсказания или «Отмена».",
+                reply_markup=CANCEL_KEYBOARD,
+            )
         return True
 
     if state == PREDICTION_STATE_MENU:
