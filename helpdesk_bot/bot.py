@@ -20,6 +20,7 @@ from telegram.ext import (
 
 from . import db
 from .daily import refresh_daily_jobs
+from .predictions import refresh_prediction_job, wish_command
 from .handlers import tickets, admin, help, groups
 from .utils import (
     TELEGRAM_TOKEN,
@@ -83,6 +84,7 @@ async def on_startup(app):
         )
         return
     await refresh_daily_jobs(app.job_queue)
+    await refresh_prediction_job(app.job_queue)
 
 
 async def on_shutdown(app):
@@ -219,6 +221,7 @@ def main():
     app.add_handler(conv_speech)
 
     app.add_handler(CommandHandler("start", tickets.start_menu))
+    app.add_handler(CommandHandler("wish", wish_command))
     app.add_handler(MessageHandler(filters.Regex("^Мои запросы$"), tickets.my_requests))
 
     app.add_handler(MessageHandler(filters.Regex("^Справка$"), help.help_menu))
@@ -232,6 +235,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^Аналитика$"), admin.show_analytics_menu))
     app.add_handler(MessageHandler(filters.Regex("^Настройки$"), admin.show_settings_menu))
     app.add_handler(MessageHandler(filters.Regex("^Ежедневные сообщения$"), admin.daily_message_start))
+    app.add_handler(MessageHandler(filters.Regex("^Предсказания$"), admin.predictions_start))
     app.add_handler(
         MessageHandler(
             filters.Regex("^(Обычный текст|Markdown|HTML|Отмена)$"),
@@ -271,6 +275,22 @@ def main():
             block=False,
         ),
         group=5,
+    )
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            admin.predictions_menu,
+            block=False,
+        ),
+        group=6,
+    )
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            admin.predictions_save,
+            block=False,
+        ),
+        group=7,
     )
     app.add_handler(
         MessageHandler(filters.Regex(admin.BACK_BUTTON_PATTERN), admin.back_to_main)
