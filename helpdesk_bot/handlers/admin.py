@@ -292,7 +292,7 @@ async def predictions_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bo
         if _is_back_button(choice):
             _reset_prediction_workflow(ctx)
             await show_settings_menu(update, ctx)
-            _mark_skip_prediction_save(ctx)
+          _mark_skip_prediction_save(ctx)
             return True
 
         if normalized_choice == _PREDICTION_ADD_BUTTON and state == PREDICTION_STATE_ADD:
