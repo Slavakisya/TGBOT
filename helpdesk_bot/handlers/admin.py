@@ -73,8 +73,10 @@ _BACK_BUTTON_CANONICAL = _normalize_button_text(ADMIN_BACK_BUTTON)
 BACK_BUTTON_PATTERN = rf"^⬅\ufe0f?\s*{_BACK_BUTTON_CANONICAL.split(' ', 1)[-1]}$"
 
 
+_PREDICTIONS_MENU_ENTRY = _normalize_button_text("Предсказания")
+
 _ADMIN_ESCAPE_BUTTONS = {
-    _normalize_button_text(value)
+    normalized
     for value in [
         "Заявки",
         "Аналитика",
@@ -88,6 +90,8 @@ _ADMIN_ESCAPE_BUTTONS = {
         "Изменить спич",
         "Предсказания",
     ]
+    for normalized in [_normalize_button_text(value)]
+    if normalized != _PREDICTIONS_MENU_ENTRY
 }
 
 
@@ -255,6 +259,15 @@ async def predictions_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bo
     raw_choice = update.message.text or ""
     choice = raw_choice.strip()
     normalized_choice = _normalize_button_text(choice)
+    is_menu_choice = normalized_choice in {
+        _PREDICTION_ADD_BUTTON,
+        _PREDICTION_CONFIGURE_BUTTON,
+        _PREDICTION_EDIT_BUTTON,
+        _PREDICTION_DELETE_BUTTON,
+    } or _is_back_button(choice)
+
+    if normalized_choice == _PREDICTIONS_MENU_ENTRY:
+        return True
     is_menu_choice = normalized_choice in {
         _PREDICTION_ADD_BUTTON,
         _PREDICTION_CONFIGURE_BUTTON,

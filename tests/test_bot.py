@@ -715,6 +715,12 @@ async def test_predictions_menu_normalizes_buttons(monkeypatch, tmp_path):
     await admin_mod.predictions_start(update_start, ctx)
     assert ctx.user_data[admin_mod.PREDICTION_STATE_KEY] == admin_mod.PREDICTION_STATE_MENU
 
+    update_repeat = DummyUpdate('Предсказания')
+    handled_repeat = await admin_mod.predictions_menu(update_repeat, ctx)
+    assert handled_repeat is True
+    assert ctx.user_data[admin_mod.PREDICTION_STATE_KEY] == admin_mod.PREDICTION_STATE_MENU
+    assert update_repeat.message.replies == []
+
     update_add = DummyUpdate('  Добавить   предсказание  ')
     await admin_mod.predictions_menu(update_add, ctx)
     assert ctx.user_data[admin_mod.PREDICTION_STATE_KEY] == admin_mod.PREDICTION_STATE_ADD
