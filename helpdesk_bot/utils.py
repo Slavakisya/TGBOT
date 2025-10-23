@@ -66,6 +66,7 @@ ADMIN_ANALYTICS_MENU = [["Статистика", "Благодарности"], 
 
 ADMIN_SETTINGS_MENU = [
     ["Ежедневные сообщения"],
+    ["Предсказания"],
     ["Изменить CRM", "Изменить спич"],
     [ADMIN_BACK_BUTTON],
 ]
@@ -88,6 +89,17 @@ DAILY_MESSAGE_EDIT_KEYBOARD = [["Отмена"], ["Пусто"]]
 DAILY_MESSAGE_FORMAT_MENU = [
     ["Обычный текст"],
     ["Markdown", "HTML"],
+    [ADMIN_BACK_BUTTON],
+]
+
+ADMIN_PREDICTIONS_MENU = [
+    ["Добавить предсказание"],
+    ["Настроить предсказание"],
+    [ADMIN_BACK_BUTTON],
+]
+
+PREDICTION_SELECTED_MENU = [
+    ["Изменить текст", "Удалить предсказание"],
     [ADMIN_BACK_BUTTON],
 ]
 CANCEL_KEYBOARD = ReplyKeyboardMarkup([["Отмена"]], resize_keyboard=True)
