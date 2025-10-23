@@ -74,6 +74,14 @@ async def init_db():
             )
             """
         )
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS predictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                text TEXT NOT NULL
+            )
+            """
+        )
         # дефолтные тексты CRM и спича
         try:
             default_crm = CRM_PATH.read_text(encoding="utf-8")
@@ -253,6 +261,64 @@ async def delete_daily_message(message_id: int) -> None:
             (message_id,),
         )
         await conn.commit()
+
+
+async def list_predictions() -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cur = await conn.execute(
+            "SELECT id, text FROM predictions ORDER BY id"
+        )
+        rows = await cur.fetchall()
+        return [{"id": row[0], "text": row[1]} for row in rows]
+
+
+async def get_prediction(prediction_id: int) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cur = await conn.execute(
+            "SELECT id, text FROM predictions WHERE id = ?",
+            (prediction_id,),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return None
+        return {"id": row[0], "text": row[1]}
+
+
+async def add_prediction(text: str) -> int:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cur = await conn.execute(
+            "INSERT INTO predictions(text) VALUES(?)",
+            (text,),
+        )
+        await conn.commit()
+        return cur.lastrowid
+
+
+async def update_prediction(prediction_id: int, text: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            "UPDATE predictions SET text = ? WHERE id = ?",
+            (text, prediction_id),
+        )
+        await conn.commit()
+
+
+async def delete_prediction(prediction_id: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            "DELETE FROM predictions WHERE id = ?",
+            (prediction_id,),
+        )
+        await conn.commit()
+
+
+async def get_random_prediction() -> str | None:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cur = await conn.execute(
+            "SELECT text FROM predictions ORDER BY RANDOM() LIMIT 1"
+        )
+        row = await cur.fetchone()
+        return row[0] if row else None
 
 
 async def add_user(user_id: int, full_name: str):
