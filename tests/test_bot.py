@@ -727,6 +727,8 @@ async def test_predictions_menu_normalizes_buttons(monkeypatch, tmp_path):
     assert any('нового предсказания' in msg.lower() for msg in update_add.message.replies)
 
     update_save = DummyUpdate('Первое предсказание')
+    handled_save = await admin_mod.predictions_menu(update_save, ctx)
+    assert handled_save is False
     await admin_mod.predictions_save(update_save, ctx)
     assert ctx.user_data[admin_mod.PREDICTION_STATE_KEY] == admin_mod.PREDICTION_STATE_MENU
     predictions = await db_mod.list_predictions()
@@ -859,9 +861,13 @@ async def test_predictions_menu_ignores_buttons_during_text_entry(monkeypatch, t
     assert handled is True
     assert ctx.user_data[admin_mod.PREDICTION_STATE_KEY] == admin_mod.PREDICTION_STATE_ADD
     assert any('текст нового предсказания' in msg.lower() for msg in update_menu_button.message.replies)
+    await admin_mod.predictions_save(update_menu_button, ctx)
     assert await db_mod.list_predictions() == []
 
-    await admin_mod.predictions_save(DummyUpdate('Первое предсказание'), ctx)
+    update_final_add = DummyUpdate('Первое предсказание')
+    handled_final_add = await admin_mod.predictions_menu(update_final_add, ctx)
+    assert handled_final_add is False
+    await admin_mod.predictions_save(update_final_add, ctx)
 
     update_config = DummyUpdate('Настроить предсказание')
     await admin_mod.predictions_menu(update_config, ctx)
@@ -879,7 +885,12 @@ async def test_predictions_menu_ignores_buttons_during_text_entry(monkeypatch, t
     prediction_before = await db_mod.get_prediction(1)
     assert prediction_before['text'] == 'Первое предсказание'
 
-    await admin_mod.predictions_save(DummyUpdate('Обновлённое предсказание'), ctx)
+    await admin_mod.predictions_save(update_during_edit, ctx)
+
+    update_final_edit = DummyUpdate('Обновлённое предсказание')
+    handled_final_edit = await admin_mod.predictions_menu(update_final_edit, ctx)
+    assert handled_final_edit is False
+    await admin_mod.predictions_save(update_final_edit, ctx)
 
     prediction_after = await db_mod.get_prediction(1)
     assert prediction_after['text'] == 'Обновлённое предсказание'
