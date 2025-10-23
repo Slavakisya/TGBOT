@@ -99,6 +99,12 @@ def _is_back_button(value: str | None) -> bool:
     return normalized in {_BACK_BUTTON_CANONICAL, "Назад"}
 
 
+_PREDICTION_ADD_BUTTON = _normalize_button_text("Добавить предсказание")
+_PREDICTION_CONFIGURE_BUTTON = _normalize_button_text("Настроить предсказание")
+_PREDICTION_EDIT_BUTTON = _normalize_button_text("Изменить текст")
+_PREDICTION_DELETE_BUTTON = _normalize_button_text("Удалить предсказание")
+
+
 def _set_daily_state(ctx: ContextTypes.DEFAULT_TYPE, value: str | None) -> None:
     if value is None:
         ctx.user_data.pop(DAILY_STATE_KEY, None)
@@ -266,7 +272,7 @@ async def predictions_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             await show_settings_menu(update, ctx)
             return
 
-        if choice == "Добавить предсказание":
+        if normalized_choice == _PREDICTION_ADD_BUTTON:
             _set_prediction_state(ctx, PREDICTION_STATE_ADD)
             await update.message.reply_text(
                 "Отправьте текст нового предсказания.",
@@ -274,7 +280,7 @@ async def predictions_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             )
             return
 
-        if choice == "Настроить предсказание":
+        if normalized_choice == _PREDICTION_CONFIGURE_BUTTON:
             predictions = await db.list_predictions()
             if not predictions:
                 await update.message.reply_text(
@@ -343,7 +349,7 @@ async def predictions_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             await _send_predictions_menu(update)
             return
 
-        if choice == "Изменить текст":
+        if normalized_choice == _PREDICTION_EDIT_BUTTON:
             _set_prediction_state(ctx, PREDICTION_STATE_EDIT)
             await update.message.reply_text(
                 "Отправьте новый текст предсказания.",
@@ -351,7 +357,7 @@ async def predictions_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             )
             return
 
-        if choice == "Удалить предсказание":
+        if normalized_choice == _PREDICTION_DELETE_BUTTON:
             await db.delete_prediction(prediction_id)
             await update.message.reply_text("✅ Предсказание удалено.")
             _set_selected_prediction(ctx, None)

@@ -671,6 +671,78 @@ async def test_predictions_table_autocreation(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_predictions_menu_normalizes_buttons(monkeypatch, tmp_path):
+    monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
+    monkeypatch.setenv('ADMIN_IDS', '1')
+    monkeypatch.setenv('HELPDESK_DB_PATH', str(tmp_path / 'preds.db'))
+
+    for name in [
+        'helpdesk_bot.db',
+        'helpdesk_bot.utils',
+        'helpdesk_bot.handlers.admin',
+    ]:
+        sys.modules.pop(name, None)
+
+    db_mod = importlib.import_module('helpdesk_bot.db')
+    admin_mod = importlib.import_module('helpdesk_bot.handlers.admin')
+
+    await db_mod.init_db()
+
+    class DummyMessage:
+        def __init__(self, text):
+            self.text = text
+            self.replies: list[str] = []
+
+        async def reply_text(self, text, reply_markup=None):
+            self.replies.append(text)
+
+    class DummyUser:
+        def __init__(self, user_id):
+            self.id = user_id
+
+    class DummyUpdate:
+        counter = 0
+
+        def __init__(self, text):
+            DummyUpdate.counter += 1
+            self.message = DummyMessage(text)
+            self.effective_user = DummyUser(1)
+            self.update_id = DummyUpdate.counter
+
+    ctx = types.SimpleNamespace(user_data={}, application=types.SimpleNamespace(job_queue=None))
+
+    update_start = DummyUpdate('Предсказания')
+    await admin_mod.predictions_start(update_start, ctx)
+    assert ctx.user_data[admin_mod.PREDICTION_STATE_KEY] == admin_mod.PREDICTION_STATE_MENU
+
+    update_add = DummyUpdate('  Добавить   предсказание  ')
+    await admin_mod.predictions_menu(update_add, ctx)
+    assert ctx.user_data[admin_mod.PREDICTION_STATE_KEY] == admin_mod.PREDICTION_STATE_ADD
+    assert any('нового предсказания' in msg.lower() for msg in update_add.message.replies)
+
+    update_save = DummyUpdate('Первое предсказание')
+    await admin_mod.predictions_save(update_save, ctx)
+    assert ctx.user_data[admin_mod.PREDICTION_STATE_KEY] == admin_mod.PREDICTION_STATE_MENU
+    predictions = await db_mod.list_predictions()
+    assert len(predictions) == 1
+
+    update_config = DummyUpdate(' Настроить   предсказание ')
+    await admin_mod.predictions_menu(update_config, ctx)
+    assert ctx.user_data[admin_mod.PREDICTION_STATE_KEY] == admin_mod.PREDICTION_STATE_SELECT
+    assert any('доступные предсказания' in msg.lower() for msg in update_config.message.replies)
+
+    update_select = DummyUpdate('1')
+    await admin_mod.predictions_menu(update_select, ctx)
+    assert ctx.user_data[admin_mod.PREDICTION_STATE_KEY] == admin_mod.PREDICTION_STATE_SELECTED
+    assert any('#1' in msg for msg in update_select.message.replies)
+
+    update_edit = DummyUpdate('  Изменить   текст  ')
+    await admin_mod.predictions_menu(update_edit, ctx)
+    assert ctx.user_data[admin_mod.PREDICTION_STATE_KEY] == admin_mod.PREDICTION_STATE_EDIT
+    assert any('новый текст' in msg.lower() for msg in update_edit.message.replies)
+
+
+@pytest.mark.asyncio
 async def test_wish_command_without_predictions(predictions, monkeypatch):
     async def fake_random():
         return None
