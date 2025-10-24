@@ -254,6 +254,14 @@ def main():
     )
     app.add_handler(
         MessageHandler(
+            filters.PHOTO,
+            admin.daily_message_save_photo,
+            block=False,
+        ),
+        group=3,
+    )
+    app.add_handler(
+        MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             admin.daily_message_save,
             block=False,

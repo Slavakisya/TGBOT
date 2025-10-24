@@ -42,16 +42,29 @@ async def send_daily_message(context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     entry = await db.get_daily_message(message_id)
-    if not entry or not entry["text"].strip():
+    if not entry:
+        return
+
+    text = entry["text"].strip()
+    photo_id = entry.get("photo_file_id") or ""
+    if not text and not photo_id:
         return
 
     try:
-        await context.bot.send_message(
-            int(chat_id),
-            entry["text"],
-            parse_mode=entry["parse_mode"] or None,
-            disable_web_page_preview=entry["disable_preview"],
-        )
+        if photo_id:
+            await context.bot.send_photo(
+                int(chat_id),
+                photo_id,
+                caption=text or None,
+                parse_mode=entry["parse_mode"] or None,
+            )
+        else:
+            await context.bot.send_message(
+                int(chat_id),
+                entry["text"],
+                parse_mode=entry["parse_mode"] or None,
+                disable_web_page_preview=entry["disable_preview"],
+            )
     except Exception as exc:  # pragma: no cover - runtime network issues
         log.warning(
             "Не удалось отправить ежедневное сообщение #%s в чат %s: %s",

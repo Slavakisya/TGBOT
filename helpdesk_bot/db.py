@@ -83,10 +83,17 @@ async def init_db():
                 text TEXT NOT NULL DEFAULT '',
                 parse_mode TEXT NOT NULL DEFAULT '',
                 disable_preview INTEGER NOT NULL DEFAULT 0,
+                photo_file_id TEXT NOT NULL DEFAULT '',
                 send_time TEXT NOT NULL DEFAULT '17:00'
             )
             """
         )
+        cursor = await conn.execute("PRAGMA table_info(daily_messages)")
+        daily_cols = [r[1] for r in await cursor.fetchall()]
+        if "photo_file_id" not in daily_cols:
+            await conn.execute(
+                "ALTER TABLE daily_messages ADD COLUMN photo_file_id TEXT NOT NULL DEFAULT ''"
+            )
         await conn.execute(PREDICTIONS_TABLE_SQL)
         # дефолтные тексты CRM и спича
         try:
@@ -136,10 +143,10 @@ async def init_db():
                 disable_value = disable_row[0] if disable_row else "0"
                 await conn.execute(
                     """
-                    INSERT INTO daily_messages(text, parse_mode, disable_preview, send_time)
-                    VALUES (?, ?, ?, '17:00')
+                    INSERT INTO daily_messages(text, parse_mode, disable_preview, photo_file_id, send_time)
+                    VALUES (?, ?, ?, ?, '17:00')
                     """,
-                    (text_value, parse_mode_value, 1 if disable_value == "1" else 0),
+                    (text_value, parse_mode_value, 1 if disable_value == "1" else 0, ""),
                 )
         await conn.commit()
 
@@ -165,7 +172,7 @@ async def list_daily_messages() -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as conn:
         cur = await conn.execute(
             """
-            SELECT id, text, parse_mode, disable_preview, send_time
+            SELECT id, text, parse_mode, disable_preview, photo_file_id, send_time
               FROM daily_messages
              ORDER BY send_time, id
             """
@@ -177,7 +184,8 @@ async def list_daily_messages() -> list[dict]:
                 "text": row[1],
                 "parse_mode": row[2],
                 "disable_preview": bool(row[3]),
-                "send_time": row[4],
+                "photo_file_id": row[4],
+                "send_time": row[5],
             }
             for row in rows
         ]
@@ -187,7 +195,7 @@ async def get_daily_message(message_id: int) -> dict | None:
     async with aiosqlite.connect(DB_PATH) as conn:
         cur = await conn.execute(
             """
-            SELECT id, text, parse_mode, disable_preview, send_time
+            SELECT id, text, parse_mode, disable_preview, photo_file_id, send_time
               FROM daily_messages
              WHERE id = ?
             """,
@@ -201,7 +209,8 @@ async def get_daily_message(message_id: int) -> dict | None:
             "text": row[1],
             "parse_mode": row[2],
             "disable_preview": bool(row[3]),
-            "send_time": row[4],
+            "photo_file_id": row[4],
+            "send_time": row[5],
         }
 
 
@@ -210,14 +219,15 @@ async def add_daily_message(
     send_time: str,
     parse_mode: str = "",
     disable_preview: bool = False,
+    photo_file_id: str = "",
 ) -> int:
     async with aiosqlite.connect(DB_PATH) as conn:
         cur = await conn.execute(
             """
-            INSERT INTO daily_messages(text, parse_mode, disable_preview, send_time)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO daily_messages(text, parse_mode, disable_preview, photo_file_id, send_time)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (text, parse_mode, 1 if disable_preview else 0, send_time),
+            (text, parse_mode, 1 if disable_preview else 0, photo_file_id, send_time),
         )
         await conn.commit()
         return cur.lastrowid
@@ -230,6 +240,7 @@ async def update_daily_message(
     parse_mode: str | None = None,
     disable_preview: bool | None = None,
     send_time: str | None = None,
+    photo_file_id: str | None = None,
 ) -> None:
     assignments = []
     params: list = []
@@ -246,6 +257,9 @@ async def update_daily_message(
     if send_time is not None:
         assignments.append("send_time = ?")
         params.append(send_time)
+    if photo_file_id is not None:
+        assignments.append("photo_file_id = ?")
+        params.append(photo_file_id)
 
     if not assignments:
         return

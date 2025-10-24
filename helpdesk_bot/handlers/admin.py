@@ -13,6 +13,8 @@ from ..utils import (
     ADMIN_PREDICTIONS_MENU,
     DAILY_MESSAGE_SELECTED_MENU,
     DAILY_MESSAGE_EDIT_KEYBOARD,
+    DAILY_MESSAGE_PHOTO_ADD_KEYBOARD,
+    DAILY_MESSAGE_PHOTO_EDIT_KEYBOARD,
     DAILY_MESSAGE_FORMAT_MENU,
     PREDICTION_SELECTED_MENU,
     ADMIN_BACK_BUTTON,
@@ -41,6 +43,8 @@ DAILY_STATE_SELECTED = "selected"
 DAILY_STATE_EDIT_TIME = "edit_time"
 DAILY_STATE_ADD_TIME = "add_time"
 DAILY_STATE_ADD_TEXT = "add_text"
+DAILY_STATE_ADD_PHOTO = "add_photo"
+DAILY_STATE_EDIT_PHOTO = "edit_photo"
 
 DAILY_SELECTED_KEY = "daily_message_selected_id"
 DAILY_NEW_TIME_KEY = "daily_message_new_time"
@@ -826,7 +830,12 @@ async def _daily_overview() -> dict:
         lines.append("— сообщений нет —")
     else:
         for entry in messages:
-            preview = entry["text"].strip().splitlines()[0] if entry["text"].strip() else "— пусто —"
+            if entry["text"].strip():
+                preview = entry["text"].strip().splitlines()[0]
+            elif entry.get("photo_file_id"):
+                preview = "[картинка]"
+            else:
+                preview = "— пусто —"
             lines.append(f"{entry['id']}. {entry['send_time']} — {preview}")
 
     lines.append("")
@@ -863,15 +872,22 @@ async def _send_selected_menu(update: Update, message: dict) -> None:
     }.get(message["parse_mode"], message["parse_mode"])
 
     preview_label = "выключен" if message["disable_preview"] else "включён"
+    photo_label = "задана" if message.get("photo_file_id") else "не задана"
 
     lines = [
         f"Сообщение #{message['id']}",
         f"Время отправки: {message['send_time']}",
         f"Форматирование: {parse_mode_label}",
         f"Предпросмотр ссылок: {preview_label}",
+        f"Картинка: {photo_label}",
         "",
     ]
-    lines.append(message["text"] if message["text"].strip() else "— текст не задан —")
+    if message["text"].strip():
+        lines.append(message["text"])
+    elif message.get("photo_file_id"):
+        lines.append("— текст не задан —")
+    else:
+        lines.append("— текст не задан —")
     lines.append("")
     lines.append("Выберите действие:")
 
@@ -911,6 +927,8 @@ async def daily_message_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
         DAILY_STATE_ADD_TEXT,
         DAILY_STATE_EDIT_TIME,
         DAILY_STATE_FORMAT,
+        DAILY_STATE_ADD_PHOTO,
+        DAILY_STATE_EDIT_PHOTO,
     }:
         return
 
@@ -1014,6 +1032,17 @@ async def daily_message_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
             )
             return
 
+        if choice == "Изменить картинку":
+            _set_daily_state(ctx, DAILY_STATE_EDIT_PHOTO)
+            _mark_skip_update(ctx, update)
+            await update.message.reply_text(
+                "Отправьте новую картинку для сообщения или выберите «Удалить фото».",
+                reply_markup=ReplyKeyboardMarkup(
+                    DAILY_MESSAGE_PHOTO_EDIT_KEYBOARD, resize_keyboard=True
+                ),
+            )
+            return
+
         if choice == "Форматирование":
             _set_daily_state(ctx, DAILY_STATE_FORMAT)
             await update.message.reply_text(
@@ -1048,20 +1077,29 @@ async def daily_message_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
 
         if choice == "Предпросмотр":
             message = await db.get_daily_message(message_id)
-            if not message or not message["text"].strip():
+            if not message or (
+                not message["text"].strip() and not message.get("photo_file_id")
+            ):
                 await update.message.reply_text(
-                    "Текст сообщения не задан.",
+                    "Контент сообщения не задан.",
                     reply_markup=ReplyKeyboardMarkup(
                         DAILY_MESSAGE_SELECTED_MENU, resize_keyboard=True
                     ),
                 )
                 return
             try:
-                await update.message.reply_text(
-                    message["text"],
-                    parse_mode=message["parse_mode"] or None,
-                    disable_web_page_preview=message["disable_preview"],
-                )
+                if message.get("photo_file_id"):
+                    await update.message.reply_photo(
+                        message["photo_file_id"],
+                        caption=message["text"].strip() or None,
+                        parse_mode=message["parse_mode"] or None,
+                    )
+                else:
+                    await update.message.reply_text(
+                        message["text"],
+                        parse_mode=message["parse_mode"] or None,
+                        disable_web_page_preview=message["disable_preview"],
+                    )
             except Exception as exc:  # pragma: no cover
                 log.warning(
                     "Не удалось показать предпросмотр ежедневного сообщения #%s: %s",
@@ -1105,6 +1143,8 @@ async def daily_message_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
         DAILY_STATE_ADD_TIME,
         DAILY_STATE_ADD_TEXT,
         DAILY_STATE_EDIT_TIME,
+        DAILY_STATE_ADD_PHOTO,
+        DAILY_STATE_EDIT_PHOTO,
     }:
         return
 
@@ -1148,17 +1188,41 @@ async def daily_message_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
             return
         text_value = "" if lowered == "пусто" else raw_text
         new_id = await db.add_daily_message(text_value, send_time)
-        await update.message.reply_text("✅ Сообщение добавлено.")
         _set_new_message_time(ctx, None)
         _set_selected_message(ctx, new_id)
-        _set_daily_state(ctx, DAILY_STATE_SELECTED)
+        await update.message.reply_text(
+            "✅ Сообщение добавлено. Отправьте картинку для сообщения или нажмите «Пропустить».",
+            reply_markup=ReplyKeyboardMarkup(
+                DAILY_MESSAGE_PHOTO_ADD_KEYBOARD, resize_keyboard=True
+            ),
+        )
+        _set_daily_state(ctx, DAILY_STATE_ADD_PHOTO)
         await _refresh_jobs_from_ctx(ctx)
-        message = await db.get_daily_message(new_id)
-        if message:
-            await _send_selected_menu(update, message)
-        else:
-            _set_daily_state(ctx, DAILY_STATE_MENU)
+        return
+
+    if state == DAILY_STATE_ADD_PHOTO:
+        message_id = _get_selected_message(ctx)
+        if lowered in {"отмена", "пропустить"}:
+            if lowered == "пропустить":
+                await update.message.reply_text("Картинка пропущена.")
+            else:
+                await update.message.reply_text("Настройка картинки отменена.")
+            _set_daily_state(ctx, DAILY_STATE_SELECTED if message_id else DAILY_STATE_MENU)
+            if message_id:
+                message = await db.get_daily_message(message_id)
+                if message:
+                    await _send_selected_menu(update, message)
+                    return
+                _set_selected_message(ctx, None)
+                _set_daily_state(ctx, DAILY_STATE_MENU)
             await _send_daily_menu(update)
+            return
+        await update.message.reply_text(
+            "Пожалуйста, отправьте картинку или выберите «Пропустить».",
+            reply_markup=ReplyKeyboardMarkup(
+                DAILY_MESSAGE_PHOTO_ADD_KEYBOARD, resize_keyboard=True
+            ),
+        )
         return
 
     if state == DAILY_STATE_EDIT:
@@ -1192,6 +1256,38 @@ async def daily_message_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
             await _send_daily_menu(update)
         return
 
+    if state == DAILY_STATE_EDIT_PHOTO:
+        if lowered == "отмена":
+            _set_daily_state(ctx, DAILY_STATE_SELECTED if message_id else DAILY_STATE_MENU)
+            if message_id:
+                message = await db.get_daily_message(message_id)
+                if message:
+                    await _send_selected_menu(update, message)
+                    return
+                _set_selected_message(ctx, None)
+                _set_daily_state(ctx, DAILY_STATE_MENU)
+            await _send_daily_menu(update)
+            return
+        if lowered == "удалить фото" and message_id is not None:
+            await db.update_daily_message(message_id, photo_file_id="")
+            await update.message.reply_text("Картинка удалена.")
+            _set_daily_state(ctx, DAILY_STATE_SELECTED)
+            message = await db.get_daily_message(message_id)
+            if message:
+                await _send_selected_menu(update, message)
+            else:
+                _set_selected_message(ctx, None)
+                _set_daily_state(ctx, DAILY_STATE_MENU)
+                await _send_daily_menu(update)
+            return
+        await update.message.reply_text(
+            "Пожалуйста, отправьте новую картинку или выберите «Удалить фото».",
+            reply_markup=ReplyKeyboardMarkup(
+                DAILY_MESSAGE_PHOTO_EDIT_KEYBOARD, resize_keyboard=True
+            ),
+        )
+        return
+
     if state == DAILY_STATE_EDIT_TIME:
         if lowered == "отмена":
             _set_daily_state(ctx, DAILY_STATE_SELECTED if message_id else DAILY_STATE_MENU)
@@ -1223,6 +1319,40 @@ async def daily_message_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
             _set_selected_message(ctx, None)
             _set_daily_state(ctx, DAILY_STATE_MENU)
             await _send_daily_menu(update)
+
+
+async def daily_message_save_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_admin(update):
+        return
+
+    if _should_skip_update(ctx, update):
+        return
+
+    state = _get_daily_state(ctx)
+    if state not in {DAILY_STATE_ADD_PHOTO, DAILY_STATE_EDIT_PHOTO}:
+        return
+
+    photos = getattr(update.message, "photo", None) or []
+    if not photos:
+        return
+
+    message_id = _get_selected_message(ctx)
+    if message_id is None:
+        _set_daily_state(ctx, DAILY_STATE_MENU)
+        await _send_daily_menu(update)
+        return
+
+    file_id = photos[-1].file_id
+    await db.update_daily_message(message_id, photo_file_id=file_id)
+    await update.message.reply_text("✅ Картинка сохранена.")
+    _set_daily_state(ctx, DAILY_STATE_SELECTED)
+    message = await db.get_daily_message(message_id)
+    if message:
+        await _send_selected_menu(update, message)
+    else:
+        _set_selected_message(ctx, None)
+        _set_daily_state(ctx, DAILY_STATE_MENU)
+        await _send_daily_menu(update)
 
 
 async def daily_message_set_format(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:

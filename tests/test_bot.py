@@ -79,12 +79,17 @@ def test_format_kyiv_time(utils, monkeypatch):
 @pytest.mark.asyncio
 async def test_row_handler_valid(tickets, utils):
     class DummyMessage:
-        def __init__(self, text):
+        def __init__(self, text, photo=None):
             self.text = text
+            self.photo = photo or []
             self.replies = []
+            self.photo_replies = []
 
         async def reply_text(self, text, reply_markup=None):
             self.replies.append(text)
+
+        async def reply_photo(self, photo, caption=None, parse_mode=None):
+            self.photo_replies.append((photo, caption, parse_mode))
 
     class DummyUpdate:
         def __init__(self, text):
@@ -101,12 +106,17 @@ async def test_row_handler_valid(tickets, utils):
 @pytest.mark.asyncio
 async def test_comp_handler_valid(tickets, utils):
     class DummyMessage:
-        def __init__(self, text):
+        def __init__(self, text, photo=None):
             self.text = text
+            self.photo = photo or []
             self.replies = []
+            self.photo_replies = []
 
         async def reply_text(self, text, reply_markup=None):
             self.replies.append(text)
+
+        async def reply_photo(self, photo, caption=None, parse_mode=None):
+            self.photo_replies.append((photo, caption, parse_mode))
 
     class DummyUpdate:
         def __init__(self, text):
@@ -123,12 +133,17 @@ async def test_comp_handler_valid(tickets, utils):
 @pytest.mark.asyncio
 async def test_row_handler_cancel(bot):
     class DummyMessage:
-        def __init__(self, text):
+        def __init__(self, text, photo=None):
             self.text = text
+            self.photo = photo or []
             self.replies = []
+            self.photo_replies = []
 
         async def reply_text(self, text, reply_markup=None):
             self.replies.append(text)
+
+        async def reply_photo(self, photo, caption=None, parse_mode=None):
+            self.photo_replies.append((photo, caption, parse_mode))
 
     class DummyUpdate:
         def __init__(self, text):
@@ -144,12 +159,17 @@ async def test_row_handler_cancel(bot):
 @pytest.mark.asyncio
 async def test_problem_menu_handler_valid(bot):
     class DummyMessage:
-        def __init__(self, text):
+        def __init__(self, text, photo=None):
             self.text = text
+            self.photo = photo or []
             self.replies = []
+            self.photo_replies = []
 
         async def reply_text(self, text, reply_markup=None):
             self.replies.append(text)
+
+        async def reply_photo(self, photo, caption=None, parse_mode=None):
+            self.photo_replies.append((photo, caption, parse_mode))
 
     class DummyUpdate:
         def __init__(self, text):
@@ -328,12 +348,17 @@ async def test_daily_message_admin_flow(monkeypatch, tmp_path):
     admin_mod = importlib.import_module('helpdesk_bot.handlers.admin')
 
     class DummyMessage:
-        def __init__(self, text):
+        def __init__(self, text, photo=None):
             self.text = text
+            self.photo = photo or []
             self.replies = []
+            self.photo_replies = []
 
         async def reply_text(self, text, reply_markup=None):
             self.replies.append(text)
+
+        async def reply_photo(self, photo, caption=None, parse_mode=None):
+            self.photo_replies.append((photo, caption, parse_mode))
 
     class DummyUser:
         def __init__(self, user_id):
@@ -342,9 +367,9 @@ async def test_daily_message_admin_flow(monkeypatch, tmp_path):
     class DummyUpdate:
         counter = 0
 
-        def __init__(self, text):
+        def __init__(self, text, photo=None):
             DummyUpdate.counter += 1
-            self.message = DummyMessage(text)
+            self.message = DummyMessage(text, photo)
             self.effective_user = DummyUser(1)
             self.update_id = DummyUpdate.counter
 
@@ -366,8 +391,13 @@ async def test_daily_message_admin_flow(monkeypatch, tmp_path):
 
     update_text = DummyUpdate('Новое напоминание')
     await admin_mod.daily_message_save(update_text, ctx)
-    assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_SELECTED
+    assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_ADD_PHOTO
     assert any('сообщение добавлено' in msg.lower() for msg in update_text.message.replies)
+
+    update_skip_photo = DummyUpdate('Пропустить')
+    await admin_mod.daily_message_save(update_skip_photo, ctx)
+    assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_SELECTED
+    assert any('картинка' in msg.lower() for msg in update_skip_photo.message.replies)
 
     messages = await db_mod.list_daily_messages()
     assert len(messages) == 1
@@ -376,6 +406,7 @@ async def test_daily_message_admin_flow(monkeypatch, tmp_path):
     assert messages[0]['send_time'] == '09:30'
     assert not messages[0]['disable_preview']
     assert messages[0]['parse_mode'] == ''
+    assert messages[0]['photo_file_id'] == ''
 
     update_format = DummyUpdate('Форматирование')
     await admin_mod.daily_message_menu(update_format, ctx)
@@ -410,6 +441,30 @@ async def test_daily_message_admin_flow(monkeypatch, tmp_path):
     await admin_mod.daily_message_save(update_clear, ctx)
     msg = await db_mod.get_daily_message(message_id)
     assert msg['text'] == ''
+    assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_SELECTED
+
+    update_change_photo = DummyUpdate('Изменить картинку')
+    await admin_mod.daily_message_menu(update_change_photo, ctx)
+    assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_EDIT_PHOTO
+
+    update_photo = DummyUpdate('', photo=[types.SimpleNamespace(file_id='photo123')])
+    await admin_mod.daily_message_save_photo(update_photo, ctx)
+    msg = await db_mod.get_daily_message(message_id)
+    assert msg['photo_file_id'] == 'photo123'
+    assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_SELECTED
+
+    update_preview = DummyUpdate('Предпросмотр')
+    await admin_mod.daily_message_menu(update_preview, ctx)
+    assert ('photo123', None, 'Markdown') in update_preview.message.photo_replies
+
+    update_change_photo_again = DummyUpdate('Изменить картинку')
+    await admin_mod.daily_message_menu(update_change_photo_again, ctx)
+    assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_EDIT_PHOTO
+
+    update_remove_photo = DummyUpdate('Удалить фото')
+    await admin_mod.daily_message_save(update_remove_photo, ctx)
+    msg = await db_mod.get_daily_message(message_id)
+    assert msg['photo_file_id'] == ''
     assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_SELECTED
 
     update_delete = DummyUpdate('Удалить сообщение')
@@ -574,19 +629,32 @@ async def test_send_daily_message(monkeypatch, tmp_path):
     class DummyBot:
         def __init__(self):
             self.sent = []
+            self.photos = []
 
         async def send_message(self, chat_id, text, parse_mode=None, disable_web_page_preview=None):
             self.sent.append((chat_id, text, parse_mode, disable_web_page_preview))
+
+        async def send_photo(self, chat_id, photo, caption=None, parse_mode=None):
+            self.photos.append((chat_id, photo, caption, parse_mode))
 
     job = types.SimpleNamespace(data={'message_id': message_id})
     ctx = types.SimpleNamespace(bot=DummyBot(), job=job)
     await daily_mod.send_daily_message(ctx)
     assert ctx.bot.sent == [(123, 'Привет', 'Markdown', True)]
+    assert ctx.bot.photos == []
 
     ctx.bot.sent.clear()
-    await db_mod.update_daily_message(message_id, text='')
+    ctx.bot.photos.clear()
+    await db_mod.update_daily_message(message_id, photo_file_id='photo123')
     await daily_mod.send_daily_message(ctx)
     assert ctx.bot.sent == []
+    assert ctx.bot.photos == [(123, 'photo123', 'Привет', 'Markdown')]
+
+    ctx.bot.photos.clear()
+    await db_mod.update_daily_message(message_id, text='', photo_file_id='')
+    await daily_mod.send_daily_message(ctx)
+    assert ctx.bot.sent == []
+    assert ctx.bot.photos == []
 
 
 @pytest.mark.asyncio
