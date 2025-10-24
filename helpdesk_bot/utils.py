@@ -79,12 +79,16 @@ ADMIN_DAILY_MESSAGE_MENU = [
 
 DAILY_MESSAGE_SELECTED_MENU = [
     ["Изменить текст", "Изменить время"],
-    ["Предпросмотр", "Форматирование"],
-    ["Переключить предпросмотр", "Удалить сообщение"],
-    [ADMIN_BACK_BUTTON],
+    ["Изменить картинку", "Предпросмотр"],
+    ["Форматирование", "Переключить предпросмотр"],
+    ["Удалить сообщение", ADMIN_BACK_BUTTON],
 ]
 
 DAILY_MESSAGE_EDIT_KEYBOARD = [["Отмена"], ["Пусто"]]
+
+DAILY_MESSAGE_PHOTO_ADD_KEYBOARD = [["Отмена"], ["Пропустить"]]
+
+DAILY_MESSAGE_PHOTO_EDIT_KEYBOARD = [["Отмена"], ["Удалить фото"]]
 
 DAILY_MESSAGE_FORMAT_MENU = [
     ["Обычный текст"],
