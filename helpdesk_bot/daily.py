@@ -52,11 +52,13 @@ async def send_daily_message(context: ContextTypes.DEFAULT_TYPE) -> None:
 
     try:
         if photo_id:
+            caption = text or None
+            parse_mode = (entry["parse_mode"] or None) if caption else None
             await context.bot.send_photo(
                 int(chat_id),
                 photo_id,
-                caption=text or None,
-                parse_mode=entry["parse_mode"] or None,
+                caption=caption,
+                parse_mode=parse_mode,
             )
         else:
             await context.bot.send_message(
