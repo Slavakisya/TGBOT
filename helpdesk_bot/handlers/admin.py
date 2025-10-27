@@ -1,3 +1,5 @@
+import random
+
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
@@ -226,8 +228,10 @@ async def _send_predictions_menu(update: Update) -> None:
     lines = ["Раздел «Предсказания».", f"Всего предсказаний: {len(predictions)}."]
     if predictions:
         lines.append("")
-        lines.append("Последние записи:")
-        for entry in predictions[:5]:
+        lines.append("Случайные записи:")
+        sample_size = min(5, len(predictions))
+        sampled_predictions = random.sample(predictions, sample_size)
+        for entry in sampled_predictions:
             preview = entry["text"].strip().splitlines()[0] if entry["text"].strip() else "— пусто —"
             if len(preview) > 100:
                 preview = preview[:97] + "…"
