@@ -819,6 +819,78 @@ async def test_predictions_menu_normalizes_buttons(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_predictions_menu_shows_random_sample(monkeypatch, tmp_path):
+    monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
+    monkeypatch.setenv('ADMIN_IDS', '1')
+    monkeypatch.setenv('HELPDESK_DB_PATH', str(tmp_path / 'preds_random.db'))
+
+    for name in [
+        'helpdesk_bot.db',
+        'helpdesk_bot.utils',
+        'helpdesk_bot.handlers.admin',
+    ]:
+        sys.modules.pop(name, None)
+
+    db_mod = importlib.import_module('helpdesk_bot.db')
+    admin_mod = importlib.import_module('helpdesk_bot.handlers.admin')
+
+    await db_mod.init_db()
+    texts = ['Первое предсказание', 'Второе предсказание', 'Третье предсказание']
+    for text in texts:
+        await db_mod.add_prediction(text)
+
+    captured = {}
+
+    def fake_sample(seq, k):
+        captured['seq'] = list(seq)
+        captured['k'] = k
+        return list(reversed(seq[:k]))
+
+    monkeypatch.setattr(admin_mod.random, 'sample', fake_sample)
+
+    class DummyMessage:
+        def __init__(self, text):
+            self.text = text
+            self.replies: list[str] = []
+
+        async def reply_text(self, text, reply_markup=None):
+            self.replies.append(text)
+
+    class DummyUser:
+        def __init__(self, user_id):
+            self.id = user_id
+
+    class DummyUpdate:
+        counter = 0
+
+        def __init__(self, text):
+            DummyUpdate.counter += 1
+            self.message = DummyMessage(text)
+            self.effective_user = DummyUser(1)
+            self.update_id = DummyUpdate.counter
+
+    ctx = types.SimpleNamespace(user_data={}, application=types.SimpleNamespace(job_queue=None))
+
+    update_start = DummyUpdate('Предсказания')
+    await admin_mod.predictions_start(update_start, ctx)
+
+    assert captured['k'] == min(5, len(captured['seq']))
+    text = update_start.message.replies[-1]
+    assert 'Случайные записи:' in text
+
+    preview_lines = [
+        line
+        for line in text.splitlines()
+        if line and line[0].isdigit() and '. ' in line
+    ]
+    assert preview_lines == [
+        '3. Третье предсказание',
+        '2. Второе предсказание',
+        '1. Первое предсказание',
+    ]
+
+
+@pytest.mark.asyncio
 async def test_predictions_menu_passthrough_for_text(monkeypatch, tmp_path):
     monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
     monkeypatch.setenv('ADMIN_IDS', '1')
