@@ -235,7 +235,7 @@ async def test_row_handler_valid(tickets, utils):
     ctx = types.SimpleNamespace(user_data={})
     update = DummyUpdate('3')
     state = await tickets.row_handler(update, ctx)
-    assert state == utils.STATE_COMP
+    assert state == utils.ConversationState.COMP
     assert ctx.user_data['row'] == '3'
     assert 'Введите номер компьютера' in update.message.replies[0]
 
@@ -262,7 +262,7 @@ async def test_comp_handler_valid(tickets, utils):
     ctx = types.SimpleNamespace(user_data={'row': '3'})
     update = DummyUpdate('5')
     state = await tickets.comp_handler(update, ctx)
-    assert state == utils.STATE_PROBLEM_MENU
+    assert state == utils.ConversationState.PROBLEM_MENU
     assert ctx.user_data['row_comp'] == '3/5'
     assert 'Выберите тип проблемы' in update.message.replies[0]
 
@@ -315,7 +315,7 @@ async def test_problem_menu_handler_valid(bot):
     ctx = types.SimpleNamespace(user_data={})
     update = DummyUpdate(bot.PROBLEMS[1])
     state = await bot.problem_menu_handler(update, ctx)
-    assert state == bot.STATE_CUSTOM_DESC
+    assert state == bot.ConversationState.CUSTOM_DESC
     assert ctx.user_data['problem'] == bot.PROBLEMS[1]
     assert 'Опишите свою проблему' in update.message.replies[0]
 
@@ -337,7 +337,7 @@ async def test_problem_menu_handler_invalid(bot):
     ctx = types.SimpleNamespace(user_data={})
     update = DummyUpdate('Неизвестная проблема')
     state = await bot.problem_menu_handler(update, ctx)
-    assert state == bot.STATE_PROBLEM_MENU
+    assert state == bot.ConversationState.PROBLEM_MENU
     assert 'Выберите проблему из списка' in update.message.replies[0]
 
 

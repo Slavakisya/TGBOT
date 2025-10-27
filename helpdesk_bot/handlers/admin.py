@@ -26,13 +26,7 @@ from ..utils import (
     USER_MAIN_MENU,
     format_kyiv_time,
     log,
-    STATE_ARCHIVE_DATE,
-    STATE_STATS_DATE,
-    STATE_CRM_EDIT,
-    STATE_SPEECH_EDIT,
-    STATE_DAILY_MESSAGE_MENU,
-    STATE_DAILY_MESSAGE_EDIT,
-    STATE_DAILY_MESSAGE_FORMAT,
+    ConversationState,
 )
 
 
@@ -715,14 +709,14 @@ async def init_archive(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
         "Введите дату (ГГГГ-ММ-ДД):", reply_markup=CANCEL_KEYBOARD
     )
-    return STATE_ARCHIVE_DATE
+    return ConversationState.ARCHIVE_DATE
 
 
 async def archive_date_invalid(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
         "Неверный формат. Введите ГГГГ-ММ-ДД:", reply_markup=CANCEL_KEYBOARD
     )
-    return STATE_ARCHIVE_DATE
+    return ConversationState.ARCHIVE_DATE
 
 
 async def archive_by_date_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -753,7 +747,7 @@ async def stats_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         "Введите период статистики (YYYY-MM-DD — YYYY-MM-DD):",
         reply_markup=CANCEL_KEYBOARD,
     )
-    return STATE_STATS_DATE
+    return ConversationState.STATS_DATE
 
 
 async def stats_show(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -766,7 +760,7 @@ async def stats_show(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             "Неверный формат, используйте YYYY-MM-DD — YYYY-MM-DD",
             reply_markup=CANCEL_KEYBOARD,
         )
-        return STATE_STATS_DATE
+        return ConversationState.STATS_DATE
     start_str, end_str = parts
     by_status = await db.count_by_status(start_str, end_str)
     by_problem = await db.count_by_problem(start_str, end_str)
@@ -789,7 +783,7 @@ async def edit_crm_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
         "Введите весь текст CRM:", reply_markup=CANCEL_KEYBOARD
     )
-    return STATE_CRM_EDIT
+    return ConversationState.CRM_EDIT
 
 
 async def edit_crm_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -810,7 +804,7 @@ async def edit_speech_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> i
     await update.message.reply_text(
         "Введите весь текст спича:", reply_markup=CANCEL_KEYBOARD
     )
-    return STATE_SPEECH_EDIT
+    return ConversationState.SPEECH_EDIT
 
 
 async def edit_speech_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
