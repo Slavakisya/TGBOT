@@ -63,10 +63,20 @@ async def start_conversation(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
     return STATE_ROW
 
 
+async def handle_cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    message = getattr(update, "message", None)
+    text = (getattr(message, "text", None) or "").strip()
+    if text == "Отмена":
+        result = await cancel(update, ctx)
+        return result if result is not None else ConversationHandler.END
+    return None
+
+
 async def row_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    cancel_result = await handle_cancel(update, ctx)
+    if cancel_result:
+        return cancel_result
     txt = update.message.text.strip()
-    if txt == "Отмена":
-        return await cancel(update, ctx)
     if not txt.isdigit() or not (1 <= int(txt) <= 6):
         await update.message.reply_text(
             "Неверный ряд. Введите 1–6:", reply_markup=CANCEL_KEYBOARD
@@ -80,9 +90,10 @@ async def row_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def comp_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    cancel_result = await handle_cancel(update, ctx)
+    if cancel_result:
+        return cancel_result
     txt = update.message.text.strip()
-    if txt == "Отмена":
-        return await cancel(update, ctx)
     row = int(ctx.user_data["row"])
     max_comp = 9 if row in (5, 6) else 10
     if not txt.isdigit() or not (1 <= int(txt) <= max_comp):
@@ -105,9 +116,10 @@ async def comp_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def problem_menu_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    cancel_result = await handle_cancel(update, ctx)
+    if cancel_result:
+        return cancel_result
     ch = update.message.text.strip()
-    if ch == "Отмена":
-        return await cancel(update, ctx)
     if ch not in PROBLEMS:
         await update.message.reply_text(
             "Выберите проблему из списка:", reply_markup=CANCEL_KEYBOARD
@@ -121,9 +133,10 @@ async def problem_menu_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
 
 
 async def custom_desc_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    cancel_result = await handle_cancel(update, ctx)
+    if cancel_result:
+        return cancel_result
     txt = update.message.text.strip()
-    if txt == "Отмена":
-        return await cancel(update, ctx)
     ctx.user_data["description"] = txt
     return await send_request(update, ctx)
 
@@ -266,11 +279,12 @@ async def handle_feedback_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
     if not rid:
         return
 
-    txt = (update.message.text or "").strip()
-    if txt == "Отмена":
+    cancel_result = await handle_cancel(update, ctx)
+    if cancel_result:
         ctx.user_data.pop("feedback_ticket", None)
-        await cancel(update, ctx)
-        return
+        return cancel_result
+
+    txt = (update.message.text or "").strip()
 
     tkt = await db.get_ticket(rid)
     if not tkt:
