@@ -5,6 +5,7 @@ from typing import Any
 
 from zoneinfo import ZoneInfo
 
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes, JobQueue
 
 from . import db
@@ -50,23 +51,47 @@ async def send_daily_message(context: ContextTypes.DEFAULT_TYPE) -> None:
     if not text and not photo_id:
         return
 
+    chat_id_int = int(chat_id)
+    parse_mode = entry["parse_mode"] or None
+    disable_preview = entry["disable_preview"]
+
     try:
         if photo_id:
             caption = text or None
-            parse_mode = (entry["parse_mode"] or None) if caption else None
-            await context.bot.send_photo(
-                int(chat_id),
-                photo_id,
-                caption=caption,
-                parse_mode=parse_mode,
-            )
-        else:
-            await context.bot.send_message(
-                int(chat_id),
-                entry["text"],
-                parse_mode=entry["parse_mode"] or None,
-                disable_web_page_preview=entry["disable_preview"],
-            )
+            photo_parse_mode = parse_mode if caption else None
+            try:
+                await context.bot.send_photo(
+                    chat_id_int,
+                    photo_id,
+                    caption=caption,
+                    parse_mode=photo_parse_mode,
+                )
+                return
+            except BadRequest as exc:
+                if "Not enough rights to send photos to the chat" not in str(exc):
+                    raise
+                if not text:
+                    fallback_text = (
+                        "⚠️ Не удалось отправить фото ежедневного сообщения "
+                        f"#{message_id}: нет прав на отправку изображений."
+                    )
+                    await context.bot.send_message(
+                        chat_id_int,
+                        fallback_text,
+                        disable_web_page_preview=True,
+                    )
+                    return
+                log.warning(
+                    "Чат %s не позволяет отправлять фото, отправляем только текст.",
+                    chat_id,
+                )
+
+        await context.bot.send_message(
+            chat_id_int,
+            entry["text"],
+            parse_mode=parse_mode,
+            disable_web_page_preview=disable_preview,
+        )
     except Exception as exc:  # pragma: no cover - runtime network issues
         log.warning(
             "Не удалось отправить ежедневное сообщение #%s в чат %s: %s",

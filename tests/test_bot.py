@@ -767,11 +767,14 @@ async def test_send_daily_message(monkeypatch, tmp_path):
         def __init__(self):
             self.sent = []
             self.photos = []
+            self.fail_photos = False
 
         async def send_message(self, chat_id, text, parse_mode=None, disable_web_page_preview=None):
             self.sent.append((chat_id, text, parse_mode, disable_web_page_preview))
 
         async def send_photo(self, chat_id, photo, caption=None, parse_mode=None):
+            if self.fail_photos:
+                raise daily_mod.BadRequest("Not enough rights to send photos to the chat")
             self.photos.append((chat_id, photo, caption, parse_mode))
 
     job = types.SimpleNamespace(data={'message_id': message_id})
@@ -787,11 +790,34 @@ async def test_send_daily_message(monkeypatch, tmp_path):
     assert ctx.bot.sent == []
     assert ctx.bot.photos == [(123, 'photo123', 'Привет', 'Markdown')]
 
+    ctx.bot.sent.clear()
+    ctx.bot.photos.clear()
+    ctx.bot.fail_photos = True
+    await daily_mod.send_daily_message(ctx)
+    assert ctx.bot.photos == []
+    assert ctx.bot.sent == [(123, 'Привет', 'Markdown', True)]
+    ctx.bot.fail_photos = False
+
+    ctx.bot.sent.clear()
     ctx.bot.photos.clear()
     await db_mod.update_daily_message(message_id, text='', photo_file_id='')
     await daily_mod.send_daily_message(ctx)
     assert ctx.bot.sent == []
     assert ctx.bot.photos == []
+
+    ctx.bot.sent.clear()
+    ctx.bot.fail_photos = True
+    await db_mod.update_daily_message(message_id, text='', photo_file_id='photo321')
+    await daily_mod.send_daily_message(ctx)
+    assert ctx.bot.photos == []
+    assert ctx.bot.sent == [
+        (
+            123,
+            f'⚠️ Не удалось отправить фото ежедневного сообщения #{message_id}: нет прав на отправку изображений.',
+            None,
+            True,
+        )
+    ]
 
 
 @pytest.mark.asyncio
