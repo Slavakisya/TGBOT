@@ -39,6 +39,129 @@ def predictions(utils):
     return importlib.import_module('helpdesk_bot.predictions')
 
 
+@pytest.mark.asyncio
+async def test_start_menu_private_admin(tickets, monkeypatch):
+    class DummyMessage:
+        def __init__(self):
+            self.replies = []
+            self.reply_markup = None
+
+        async def reply_text(self, text, reply_markup=None):
+            self.replies.append(text)
+            self.reply_markup = reply_markup
+
+    class DummyUpdate:
+        def __init__(self, user_id, chat_type):
+            self.message = DummyMessage()
+            self.effective_user = types.SimpleNamespace(id=user_id, full_name='Admin User')
+            self.effective_chat = types.SimpleNamespace(id=100, type=chat_type)
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, reply_markup=None):
+            self.sent.append((chat_id, text, reply_markup))
+
+    async def fake_add_user(user_id, full_name):
+        return None
+
+    monkeypatch.setattr(tickets.db, 'add_user', fake_add_user)
+
+    ctx = types.SimpleNamespace(user_data={}, bot=DummyBot())
+    update = DummyUpdate(user_id=1, chat_type='private')
+
+    state = await tickets.start_menu(update, ctx)
+
+    assert state == tickets.ConversationHandler.END
+    assert update.message.reply_markup.keyboard == tickets.ADMIN_MAIN_MENU
+    assert ctx.bot.sent == []
+
+
+@pytest.mark.asyncio
+async def test_start_menu_group_admin_prompt(tickets, monkeypatch):
+    class DummyMessage:
+        def __init__(self):
+            self.replies = []
+            self.reply_markup = None
+
+        async def reply_text(self, text, reply_markup=None):
+            self.replies.append(text)
+            self.reply_markup = reply_markup
+
+    class DummyUpdate:
+        def __init__(self, user_id, chat_type):
+            self.message = DummyMessage()
+            self.effective_user = types.SimpleNamespace(id=user_id, full_name='Admin User')
+            self.effective_chat = types.SimpleNamespace(id=-100, type=chat_type)
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, reply_markup=None):
+            self.sent.append((chat_id, text, reply_markup))
+
+    async def fake_add_user(user_id, full_name):
+        return None
+
+    monkeypatch.setattr(tickets.db, 'add_user', fake_add_user)
+
+    ctx = types.SimpleNamespace(user_data={}, bot=DummyBot())
+    update = DummyUpdate(user_id=1, chat_type='supergroup')
+
+    state = await tickets.start_menu(update, ctx)
+
+    assert state == tickets.ConversationHandler.END
+    assert update.message.reply_markup.keyboard == tickets.USER_MAIN_MENU
+    assert ctx.bot.sent
+    sent_chat_id, sent_text, sent_markup = ctx.bot.sent[0]
+    assert sent_chat_id == 1
+    assert 'личном чате' in sent_text
+    assert sent_markup.keyboard == tickets.ADMIN_MAIN_MENU
+    assert ctx.user_data['admin_private_prompt_sent'] is True
+
+
+@pytest.mark.asyncio
+async def test_start_menu_group_regular_user(tickets, monkeypatch):
+    class DummyMessage:
+        def __init__(self):
+            self.replies = []
+            self.reply_markup = None
+
+        async def reply_text(self, text, reply_markup=None):
+            self.replies.append(text)
+            self.reply_markup = reply_markup
+
+    class DummyUpdate:
+        def __init__(self, user_id, chat_type):
+            self.message = DummyMessage()
+            self.effective_user = types.SimpleNamespace(id=user_id, full_name='User')
+            self.effective_chat = types.SimpleNamespace(id=-100, type=chat_type)
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, reply_markup=None):
+            self.sent.append((chat_id, text, reply_markup))
+
+    async def fake_add_user(user_id, full_name):
+        return None
+
+    monkeypatch.setattr(tickets.db, 'add_user', fake_add_user)
+
+    ctx = types.SimpleNamespace(user_data={}, bot=DummyBot())
+    update = DummyUpdate(user_id=42, chat_type='group')
+
+    state = await tickets.start_menu(update, ctx)
+
+    assert state == tickets.ConversationHandler.END
+    assert update.message.reply_markup.keyboard == tickets.USER_MAIN_MENU
+    assert ctx.bot.sent == []
+    assert 'admin_private_prompt_sent' not in ctx.user_data
+
+
 def test_help_text_files_missing(monkeypatch, caplog):
     monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
     monkeypatch.setenv('ADMIN_IDS', '1')
@@ -60,6 +183,20 @@ def test_help_text_files_missing(monkeypatch, caplog):
     assert utils.HELP_TEXT_LINKS == 'Файл links.txt не найден.'
     assert 'rules.txt not found' in caplog.text
     assert 'links.txt not found' in caplog.text
+
+
+def test_invalid_admin_ids_logged(monkeypatch, caplog):
+    monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
+    monkeypatch.setenv('ADMIN_IDS', '1, abc, 3,42,xyz')
+
+    if 'helpdesk_bot.utils' in sys.modules:
+        del sys.modules['helpdesk_bot.utils']
+
+    with caplog.at_level(logging.WARNING, logger='helpdesk_bot'):
+        utils = importlib.import_module('helpdesk_bot.utils')
+
+    assert utils.ADMIN_IDS == {1, 3, 42}
+    assert 'Некорректные значения ADMIN_IDS игнорированы: abc, xyz' in caplog.text
 
 
 def test_format_kyiv_time(utils, monkeypatch):
