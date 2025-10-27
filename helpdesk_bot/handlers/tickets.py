@@ -21,13 +21,38 @@ from ..utils import (
 
 
 async def start_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    u = update.effective_user
-    await db.add_user(u.id, u.full_name)
-    menu = ADMIN_MAIN_MENU if u.id in ADMIN_IDS else USER_MAIN_MENU
+    user = update.effective_user
+    chat = update.effective_chat
+
+    await db.add_user(user.id, user.full_name)
+
+    chat_type = getattr(chat, "type", "private") if chat else "private"
+    is_private_chat = chat_type == "private"
+    is_admin = user.id in ADMIN_IDS
+
+    menu = ADMIN_MAIN_MENU if is_private_chat and is_admin else USER_MAIN_MENU
     await update.message.reply_text(
         "Привет! Выберите действие:",
         reply_markup=ReplyKeyboardMarkup(menu, resize_keyboard=True),
     )
+
+    if is_admin and not is_private_chat:
+        if not ctx.user_data.get("admin_private_prompt_sent"):
+            try:
+                await ctx.bot.send_message(
+                    chat_id=user.id,
+                    text=(
+                        "Админ-панель доступна только в личном чате. "
+                        "Откройте диалог с ботом, чтобы воспользоваться ей."
+                    ),
+                    reply_markup=ReplyKeyboardMarkup(
+                        ADMIN_MAIN_MENU, resize_keyboard=True
+                    ),
+                )
+            except Exception as exc:  # pragma: no cover - depends on Telegram API
+                log.debug("Не удалось отправить приватное меню админу %s: %s", user.id, exc)
+            ctx.user_data["admin_private_prompt_sent"] = True
+
     return ConversationHandler.END
 
 

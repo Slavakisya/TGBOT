@@ -11,7 +11,31 @@ log = logging.getLogger("helpdesk_bot")
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-ADMIN_IDS = {int(a) for a in re.split(r"[,\s]+", os.getenv("ADMIN_IDS", "")) if a}
+
+def _parse_admin_ids(raw_ids: str) -> set[int]:
+    """Возвращает множество ID администраторов, игнорируя неверные значения."""
+
+    parsed_ids: set[int] = set()
+    invalid_entries: set[str] = set()
+
+    for chunk in re.split(r"[,\s]+", raw_ids):
+        if not chunk:
+            continue
+        try:
+            parsed_ids.add(int(chunk))
+        except ValueError:
+            invalid_entries.add(chunk)
+
+    if invalid_entries:
+        log.warning(
+            "Некорректные значения ADMIN_IDS игнорированы: %s",
+            ", ".join(sorted(invalid_entries)),
+        )
+
+    return parsed_ids
+
+
+ADMIN_IDS = _parse_admin_ids(os.getenv("ADMIN_IDS", ""))
 ALL_ADMINS = list(ADMIN_IDS)
 
 if not TELEGRAM_TOKEN or not ADMIN_IDS:
