@@ -22,17 +22,7 @@ from . import db
 from .daily import refresh_daily_jobs
 from .predictions import refresh_prediction_job, wish_command
 from .handlers import tickets, admin, help, groups
-from .utils import (
-    TELEGRAM_TOKEN,
-    STATE_ROW,
-    STATE_COMP,
-    STATE_PROBLEM_MENU,
-    STATE_CUSTOM_DESC,
-    STATE_ARCHIVE_DATE,
-    STATE_STATS_DATE,
-    STATE_CRM_EDIT,
-    STATE_SPEECH_EDIT,
-)
+from .utils import TELEGRAM_TOKEN, ConversationState
 
 # Re-export commonly used handlers/constants for test compatibility
 PROBLEMS = tickets.PROBLEMS
@@ -132,19 +122,19 @@ def main():
     conv_ticket = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Создать запрос$"), tickets.start_conversation)],
         states={
-            STATE_ROW: [
+            ConversationState.ROW: [
                 MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, tickets.row_handler),
             ],
-            STATE_COMP: [
+            ConversationState.COMP: [
                 MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, tickets.comp_handler),
             ],
-            STATE_PROBLEM_MENU: [
+            ConversationState.PROBLEM_MENU: [
                 MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, tickets.problem_menu_handler),
             ],
-            STATE_CUSTOM_DESC: [
+            ConversationState.CUSTOM_DESC: [
                 MessageHandler(filters.Regex("^Отмена$"), tickets.cancel),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, tickets.custom_desc_handler),
             ],
@@ -159,7 +149,7 @@ def main():
     conv_archive = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Архив запросов$"), admin.init_archive)],
         states={
-            STATE_ARCHIVE_DATE: [
+            ConversationState.ARCHIVE_DATE: [
                 MessageHandler(filters.Regex("^Отмена$"), admin.cancel),
                 MessageHandler(filters.Regex(r"^\\d{4}-\\d{2}-\\d{2}$"), admin.archive_by_date_handler),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin.archive_date_invalid),
@@ -175,7 +165,7 @@ def main():
     conv_stats = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Статистика$"), admin.stats_start)],
         states={
-            STATE_STATS_DATE: [
+            ConversationState.STATS_DATE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin.stats_show)
             ]
         },
@@ -189,7 +179,7 @@ def main():
     conv_crm = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Изменить CRM$"), admin.edit_crm_start)],
         states={
-            STATE_CRM_EDIT: [
+            ConversationState.CRM_EDIT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin.edit_crm_save)
             ]
         },
@@ -203,7 +193,7 @@ def main():
     conv_speech = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Изменить спич$"), admin.edit_speech_start)],
         states={
-            STATE_SPEECH_EDIT: [
+            ConversationState.SPEECH_EDIT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin.edit_speech_save)
             ]
         },

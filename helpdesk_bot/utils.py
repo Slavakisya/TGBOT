@@ -1,6 +1,7 @@
 import os
 import re
 import logging
+from enum import IntEnum
 from pathlib import Path
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -46,21 +47,38 @@ def is_admin(user_id: int) -> bool:
     """Проверяет, является ли id администратора."""
     return user_id in ADMIN_IDS
 
-(
-    STATE_ROW,
-    STATE_COMP,
-    STATE_PROBLEM_MENU,
-    STATE_CUSTOM_DESC,
-    STATE_REPLY,
-    STATE_ARCHIVE_DATE,
-    STATE_STATS_DATE,
-    STATE_CRM_EDIT,
-    STATE_SPEECH_EDIT,
-    STATE_DAILY_MESSAGE_MENU,
-    STATE_DAILY_MESSAGE_EDIT,
-    STATE_DAILY_MESSAGE_FORMAT,
-    STATE_FEEDBACK_TEXT,
-) = range(13)
+
+
+class ConversationState(IntEnum):
+    ROW = 0
+    COMP = 1
+    PROBLEM_MENU = 2
+    CUSTOM_DESC = 3
+    REPLY = 4
+    ARCHIVE_DATE = 5
+    STATS_DATE = 6
+    CRM_EDIT = 7
+    SPEECH_EDIT = 8
+    DAILY_MESSAGE_MENU = 9
+    DAILY_MESSAGE_EDIT = 10
+    DAILY_MESSAGE_FORMAT = 11
+    FEEDBACK_TEXT = 12
+
+
+# Backwards compatibility with existing imports.
+STATE_ROW = ConversationState.ROW
+STATE_COMP = ConversationState.COMP
+STATE_PROBLEM_MENU = ConversationState.PROBLEM_MENU
+STATE_CUSTOM_DESC = ConversationState.CUSTOM_DESC
+STATE_REPLY = ConversationState.REPLY
+STATE_ARCHIVE_DATE = ConversationState.ARCHIVE_DATE
+STATE_STATS_DATE = ConversationState.STATS_DATE
+STATE_CRM_EDIT = ConversationState.CRM_EDIT
+STATE_SPEECH_EDIT = ConversationState.SPEECH_EDIT
+STATE_DAILY_MESSAGE_MENU = ConversationState.DAILY_MESSAGE_MENU
+STATE_DAILY_MESSAGE_EDIT = ConversationState.DAILY_MESSAGE_EDIT
+STATE_DAILY_MESSAGE_FORMAT = ConversationState.DAILY_MESSAGE_FORMAT
+STATE_FEEDBACK_TEXT = ConversationState.FEEDBACK_TEXT
 
 PROBLEMS = [
     "Вопросы по тф",

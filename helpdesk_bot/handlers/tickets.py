@@ -13,10 +13,7 @@ from ..utils import (
     CANCEL_KEYBOARD,
     format_kyiv_time,
     log,
-    STATE_ROW,
-    STATE_COMP,
-    STATE_PROBLEM_MENU,
-    STATE_CUSTOM_DESC,
+    ConversationState,
 )
 
 
@@ -60,7 +57,7 @@ async def start_conversation(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text(
         "Введите номер ряда (1–6):", reply_markup=CANCEL_KEYBOARD
     )
-    return STATE_ROW
+    return ConversationState.ROW
 
 
 async def handle_cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -81,12 +78,12 @@ async def row_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text(
             "Неверный ряд. Введите 1–6:", reply_markup=CANCEL_KEYBOARD
         )
-        return STATE_ROW
+        return ConversationState.ROW
     ctx.user_data["row"] = txt
     await update.message.reply_text(
         "Введите номер компьютера:", reply_markup=CANCEL_KEYBOARD
     )
-    return STATE_COMP
+    return ConversationState.COMP
 
 
 async def comp_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -101,7 +98,7 @@ async def comp_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             f"Неверный комп. Введите 1–{max_comp}:",
             reply_markup=CANCEL_KEYBOARD,
         )
-        return STATE_COMP
+        return ConversationState.COMP
     ctx.user_data["row"] = str(row)
     ctx.user_data["comp"] = txt
     ctx.user_data["row_comp"] = f"{row}/{txt}"
@@ -112,7 +109,7 @@ async def comp_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             kb, one_time_keyboard=True, resize_keyboard=True
         ),
     )
-    return STATE_PROBLEM_MENU
+    return ConversationState.PROBLEM_MENU
 
 
 async def problem_menu_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -124,12 +121,12 @@ async def problem_menu_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text(
             "Выберите проблему из списка:", reply_markup=CANCEL_KEYBOARD
         )
-        return STATE_PROBLEM_MENU
+        return ConversationState.PROBLEM_MENU
     ctx.user_data["problem"] = ch
     await update.message.reply_text(
         "Опишите свою проблему кратко:", reply_markup=CANCEL_KEYBOARD
     )
-    return STATE_CUSTOM_DESC
+    return ConversationState.CUSTOM_DESC
 
 
 async def custom_desc_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
