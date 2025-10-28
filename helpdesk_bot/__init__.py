@@ -10,10 +10,33 @@ exporting ``HELPDESK_BOT_FORCE_STUB=0`` before importing the package.
 
 from __future__ import annotations
 
+import importlib
 import os
 import sys
+from types import ModuleType
+from typing import Final
 
 
-if os.environ.setdefault("HELPDESK_BOT_FORCE_STUB", "1") == "1":
-    sys.modules.pop("telegram", None)
+def _ensure_telegram_stub() -> None:
+    """Force the lightweight telegram stub unless explicitly disabled."""
+
+    if os.environ.setdefault("HELPDESK_BOT_FORCE_STUB", "1") == "1":
+        # Remove a previously imported real telegram package so that subsequent
+        # imports resolve to the repository stub regardless of the environment
+        # pythonpath order.
+        sys.modules.pop("telegram", None)
+
+
+_ensure_telegram_stub()
+
+
+def _import(name: str) -> ModuleType:
+    """Import a submodule relative to :mod:`helpdesk_bot`."""
+
+    return importlib.import_module(f"{__name__}.{name}")
+
+
+db: Final[ModuleType] = _import("db")
+
+__all__ = ["db"]
 
