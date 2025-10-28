@@ -17,7 +17,7 @@ except ModuleNotFoundError:  # pragma: no cover - fallback path
 os.environ.setdefault("HELPDESK_BOT_FORCE_STUB", "1")
 
 # Add project root to sys.path
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from helpdesk_bot import db
 

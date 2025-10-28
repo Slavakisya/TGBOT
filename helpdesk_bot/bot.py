@@ -2,7 +2,8 @@
 import inspect
 import logging
 import os
-from datetime import time
+from datetime import datetime, time
+from types import SimpleNamespace
 
 from zoneinfo import ZoneInfo
 
@@ -19,7 +20,7 @@ from telegram.ext import (
 )
 
 from . import db
-from .daily import refresh_daily_jobs
+from .daily import refresh_daily_jobs, send_daily_message as _run_daily_message
 from .predictions import refresh_prediction_job, wish_command
 from .handlers import tickets, admin, help, groups
 from .utils import TELEGRAM_TOKEN, ConversationState
@@ -37,9 +38,38 @@ DAILY_MESSAGE_TIME = time(hour=17, minute=0, tzinfo=ZoneInfo("Europe/Kyiv"))
 
 
 async def send_daily_message(context: ContextTypes.DEFAULT_TYPE):
+    """Legacy entry point for cron jobs that used the old settings table."""
+
     chat_id = await db.get_setting("daily_message_chat_id")
+    if not chat_id:
+        return
+
+    messages = await db.list_daily_messages()
+    if messages:
+        kyiv_now = datetime.now(ZoneInfo("Europe/Kyiv")).strftime("%H:%M")
+        target = next((msg for msg in messages if msg["send_time"] == kyiv_now), None)
+        if target is not None:
+            job_context = SimpleNamespace(
+                bot=context.bot,
+                job=SimpleNamespace(data={"message_id": target["id"]}),
+            )
+            try:
+                await _run_daily_message(job_context)
+                return
+            except Exception as exc:  # pragma: no cover - runtime network issues
+                log.warning(
+                    "Не удалось отправить ежедневное сообщение #%s (новый формат): %s",
+                    target["id"],
+                    exc,
+                )
+        else:
+            log.debug(
+                "Нет ежедневного сообщения со временем %s для устаревшего расписания.",
+                kyiv_now,
+            )
+
     message = await db.get_setting("daily_message_text")
-    if not chat_id or not message:
+    if not message:
         return
 
     parse_mode = await db.get_setting("daily_message_parse_mode") or ""
@@ -55,7 +85,9 @@ async def send_daily_message(context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception as exc:  # pragma: no cover - runtime network issues
         log.warning(
-            "Не удалось отправить ежедневное сообщение в чат %s: %s", chat_id, exc
+            "Не удалось отправить ежедневное сообщение в чат %s (устаревший формат): %s",
+            chat_id,
+            exc,
         )
 
 
