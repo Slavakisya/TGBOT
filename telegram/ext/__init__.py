@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 import importlib.metadata
 import importlib.util
@@ -9,6 +10,8 @@ import os
 import sys
 from types import ModuleType, SimpleNamespace
 from typing import Any, Callable, Dict, Iterable, List, Optional
+import inspect
+import logging
 
 __all__: list[str] = []
 
@@ -197,6 +200,9 @@ else:
         return SimpleNamespace(username="stub", id=0)
 
 
+    _stub_log = logging.getLogger("telegram.ext.stub")
+
+
     class Application:
         def __init__(
             self,
@@ -226,11 +232,23 @@ else:
         async def bot_get_me(self):
             return SimpleNamespace(username="stub", id=0)
 
+        async def _call_if_coro(self, func: Callable[["Application"], Any] | None) -> None:
+            if func is None:
+                return
+            result = func(self)
+            if inspect.isawaitable(result):
+                await result
+
         def run_polling(self, close_loop: bool = False) -> None:
-            raise RuntimeError(
-                "python-telegram-bot is not installed. Install it with "
-                "'pip install python-telegram-bot[job-queue]' to run the bot."
-            )
+            async def _bootstrap() -> None:
+                await self._call_if_coro(self._post_init)
+                _stub_log.warning(
+                    "python-telegram-bot is not installed. Running in stub mode; "
+                    "no polling will occur."
+                )
+                await self._call_if_coro(self._post_shutdown)
+
+            asyncio.run(_bootstrap())
 
 
     def _noop(*args, **kwargs):  # pragma: no cover - compatibility helper
