@@ -1,10 +1,13 @@
 import types
+import datetime
 import importlib
 import sys
 import sqlite3
 from datetime import timezone, timedelta
 from pathlib import Path
 import logging
+
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -818,6 +821,103 @@ async def test_send_daily_message(monkeypatch, tmp_path):
             True,
         )
     ]
+
+
+@pytest.mark.asyncio
+async def test_bot_send_daily_message_uses_new_daily_message(monkeypatch, tmp_path):
+    monkeypatch.setenv('HELPDESK_DB_PATH', str(tmp_path / 'tickets.db'))
+    monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
+    monkeypatch.setenv('ADMIN_IDS', '1')
+
+    for name in [
+        'helpdesk_bot.db',
+        'helpdesk_bot.daily',
+        'helpdesk_bot.bot',
+    ]:
+        sys.modules.pop(name, None)
+
+    db_mod = importlib.import_module('helpdesk_bot.db')
+    await db_mod.init_db()
+    importlib.import_module('helpdesk_bot.daily')
+    bot_mod = importlib.import_module('helpdesk_bot.bot')
+
+    await db_mod.set_setting('daily_message_chat_id', '123')
+    await db_mod.add_daily_message(
+        'Новый текст',
+        send_time='09:00',
+        parse_mode='Markdown',
+        disable_preview=False,
+        photo_file_id='photo123',
+    )
+
+    class FixedDatetime:
+        @classmethod
+        def now(cls, tz=None):
+            tzinfo = tz or ZoneInfo('Europe/Kyiv')
+            return datetime.datetime(2024, 1, 1, 9, 0, tzinfo=tzinfo)
+
+    monkeypatch.setattr(bot_mod, 'datetime', FixedDatetime)
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+            self.photos = []
+
+        async def send_message(self, chat_id, text, parse_mode=None, disable_web_page_preview=None):
+            self.sent.append((chat_id, text, parse_mode, disable_web_page_preview))
+
+        async def send_photo(self, chat_id, photo, caption=None, parse_mode=None):
+            self.photos.append((chat_id, photo, caption, parse_mode))
+
+    ctx = types.SimpleNamespace(bot=DummyBot())
+
+    await bot_mod.send_daily_message(ctx)
+
+    assert ctx.bot.photos == [(123, 'photo123', 'Новый текст', 'Markdown')]
+    assert ctx.bot.sent == []
+
+
+@pytest.mark.asyncio
+async def test_bot_send_daily_message_falls_back_to_legacy(monkeypatch, tmp_path):
+    monkeypatch.setenv('HELPDESK_DB_PATH', str(tmp_path / 'tickets.db'))
+    monkeypatch.setenv('TELEGRAM_TOKEN', 'T')
+    monkeypatch.setenv('ADMIN_IDS', '1')
+
+    for name in [
+        'helpdesk_bot.db',
+        'helpdesk_bot.bot',
+    ]:
+        sys.modules.pop(name, None)
+
+    db_mod = importlib.import_module('helpdesk_bot.db')
+    await db_mod.init_db()
+    bot_mod = importlib.import_module('helpdesk_bot.bot')
+
+    await db_mod.set_setting('daily_message_chat_id', '123')
+    await db_mod.set_setting('daily_message_text', 'Старое сообщение')
+    await db_mod.set_setting('daily_message_parse_mode', 'HTML')
+    await db_mod.set_setting('daily_message_disable_preview', '1')
+
+    class FixedDatetime:
+        @classmethod
+        def now(cls, tz=None):
+            tzinfo = tz or ZoneInfo('Europe/Kyiv')
+            return datetime.datetime(2024, 1, 1, 9, 0, tzinfo=tzinfo)
+
+    monkeypatch.setattr(bot_mod, 'datetime', FixedDatetime)
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, parse_mode=None, disable_web_page_preview=None):
+            self.sent.append((chat_id, text, parse_mode, disable_web_page_preview))
+
+    ctx = types.SimpleNamespace(bot=DummyBot())
+
+    await bot_mod.send_daily_message(ctx)
+
+    assert ctx.bot.sent == [(123, 'Старое сообщение', 'HTML', True)]
 
 
 @pytest.mark.asyncio

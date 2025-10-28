@@ -25,7 +25,7 @@ __helpdesk_bot_is_stub__ = True
 def _load_real_package() -> ModuleType | None:
     """Try to load the real :mod:`telegram` package if it is installed."""
 
-    if os.environ.get("HELPDESK_BOT_FORCE_STUB") == "1":
+    if os.environ.get("HELPDESK_BOT_FORCE_STUB", "1") == "1":
         return None
 
     try:
@@ -52,7 +52,6 @@ def _load_real_package() -> ModuleType | None:
 
 
 _real_module = _load_real_package()
-
 if _real_module is not None:  # pragma: no cover - exercised when dependency is installed
     __helpdesk_bot_is_stub__ = False
     globals().update(vars(_real_module))
