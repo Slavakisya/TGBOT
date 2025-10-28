@@ -65,6 +65,7 @@ else:
         def __init__(self) -> None:
             self.TEXT = Filter("TEXT")
             self.COMMAND = Filter("COMMAND")
+            self.PHOTO = Filter("PHOTO")
 
         def Regex(self, pattern: str) -> Filter:  # noqa: N802 - mimic PTB API
             return Filter(f"Regex({pattern})")
