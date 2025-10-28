@@ -123,14 +123,30 @@ else:
 
 
     class Job:
-        def __init__(self, callback: Callable[..., Any], name: str | None, data: dict | None) -> None:
+        def __init__(
+            self,
+            callback: Callable[..., Any],
+            name: str | None,
+            data: dict | None,
+            queue: "JobQueue" | None,
+        ) -> None:
             self.callback = callback
             self.name = name
             self.data = data or {}
             self._removed = False
+            self._queue = queue
 
         def schedule_removal(self) -> None:
+            if self._removed:
+                return
+
             self._removed = True
+
+            if self._queue is not None:
+                try:
+                    self._queue._jobs.remove(self)
+                except ValueError:  # pragma: no cover - defensive guard
+                    pass
 
 
     class JobQueue:
@@ -148,12 +164,12 @@ else:
             name: str | None = None,
             data: Optional[dict] = None,
         ) -> Job:
-            job = Job(callback, name, data)
+            job = Job(callback, name, data, self)
             self._jobs.append(job)
             return job
 
         def jobs(self) -> List[Job]:
-            return list(self._jobs)
+            return [job for job in self._jobs if not job._removed]
 
 
     class _ApplicationBuilder:
