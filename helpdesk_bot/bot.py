@@ -137,6 +137,12 @@ def _build_conversation_kwargs():
     return kwargs
 
 
+def _build_coersation_kwnvargs():  # pragma: no cover - legacy compatibility shim
+    """Backward compatible alias for older, misspelled helper name."""
+
+    return _build_conversation_kwargs()
+
+
 _CONVERSATION_KWARGS = _build_conversation_kwargs()
 
 
