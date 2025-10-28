@@ -120,7 +120,7 @@ logging.basicConfig(
 log = logging.getLogger("helpdesk_bot")
 
 
-def _build_conversation_kwargs() -> dict[str, object]:
+def _build_conversation_kwargs():
     """Return keyword arguments supported by the active PTB ConversationHandler."""
 
     try:
@@ -129,7 +129,7 @@ def _build_conversation_kwargs() -> dict[str, object]:
         # Some stub implementations might not support introspection; fall back to no kwargs.
         return {}
 
-    kwargs: dict[str, object] = {}
+    kwargs = {}
 
     if os.environ.get("HELPDESK_BOT_FORCE_STUB") == "1" and "per_message" in params:
         kwargs["per_message"] = True
