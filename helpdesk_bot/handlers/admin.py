@@ -1,6 +1,7 @@
 import random
 
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes, ConversationHandler
 
 from .. import db
@@ -870,7 +871,10 @@ async def _send_selected_menu(update: Update, message: dict) -> None:
     }.get(message["parse_mode"], message["parse_mode"])
 
     preview_label = "выключен" if message["disable_preview"] else "включён"
-    photo_label = "задана" if message.get("photo_file_id") else "не задана"
+    if message.get("photo_file_id"):
+        photo_label = "задана как файл" if message.get("photo_is_document") else "задана"
+    else:
+        photo_label = "не задана"
 
     lines = [
         f"Сообщение #{message['id']}",
@@ -1087,11 +1091,29 @@ async def daily_message_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
                 return
             try:
                 if message.get("photo_file_id"):
-                    await update.message.reply_photo(
-                        message["photo_file_id"],
-                        caption=message["text"].strip() or None,
-                        parse_mode=message["parse_mode"] or None,
-                    )
+                    caption = message["text"].strip() or None
+                    parse_mode = message["parse_mode"] or None
+                    if message.get("photo_is_document"):
+                        await update.message.reply_document(
+                            message["photo_file_id"],
+                            caption=caption,
+                            parse_mode=parse_mode if caption else None,
+                        )
+                    else:
+                        try:
+                            await update.message.reply_photo(
+                                message["photo_file_id"],
+                                caption=caption,
+                                parse_mode=parse_mode if caption else None,
+                            )
+                        except BadRequest as exc:
+                            if "Not enough rights to send photos to the chat" in str(exc):
+                                raise
+                            await update.message.reply_document(
+                                message["photo_file_id"],
+                                caption=caption,
+                                parse_mode=parse_mode if caption else None,
+                            )
                 else:
                     await update.message.reply_text(
                         message["text"],
@@ -1267,7 +1289,11 @@ async def daily_message_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
             await _send_daily_menu(update)
             return
         if lowered == "удалить фото" and message_id is not None:
-            await db.update_daily_message(message_id, photo_file_id="")
+            await db.update_daily_message(
+                message_id,
+                photo_file_id="",
+                photo_is_document=False,
+            )
             await update.message.reply_text("Картинка удалена.")
             _set_daily_state(ctx, DAILY_STATE_SELECTED)
             message = await db.get_daily_message(message_id)
@@ -1331,8 +1357,29 @@ async def daily_message_save_photo(update: Update, ctx: ContextTypes.DEFAULT_TYP
         return
 
     photos = getattr(update.message, "photo", None) or []
-    if not photos:
-        return
+    document = getattr(update.message, "document", None)
+    is_document = False
+    if photos:
+        file_id = photos[-1].file_id
+    else:
+        if document is None:
+            return
+        mime_type = getattr(document, "mime_type", "") or ""
+        file_name = getattr(document, "file_name", "") or ""
+        mime_type = mime_type.lower()
+        if not (
+            mime_type.startswith("image/")
+            or file_name.lower().endswith((".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"))
+        ):
+            await update.message.reply_text(
+                "Не удалось распознать изображение. Отправьте файл в формате JPG, PNG или GIF.",
+                reply_markup=ReplyKeyboardMarkup(
+                    DAILY_MESSAGE_PHOTO_EDIT_KEYBOARD, resize_keyboard=True
+                ),
+            )
+            return
+        file_id = document.file_id
+        is_document = True
 
     message_id = _get_selected_message(ctx)
     if message_id is None:
@@ -1340,8 +1387,11 @@ async def daily_message_save_photo(update: Update, ctx: ContextTypes.DEFAULT_TYP
         await _send_daily_menu(update)
         return
 
-    file_id = photos[-1].file_id
-    await db.update_daily_message(message_id, photo_file_id=file_id)
+    await db.update_daily_message(
+        message_id,
+        photo_file_id=file_id,
+        photo_is_document=is_document,
+    )
     await update.message.reply_text("✅ Картинка сохранена.")
     _set_daily_state(ctx, DAILY_STATE_SELECTED)
     message = await db.get_daily_message(message_id)

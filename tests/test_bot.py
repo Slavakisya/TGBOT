@@ -219,17 +219,25 @@ def test_format_kyiv_time(utils, monkeypatch):
 @pytest.mark.asyncio
 async def test_row_handler_valid(tickets, utils):
     class DummyMessage:
-        def __init__(self, text, photo=None):
+        def __init__(self, text, photo=None, *, fail_photo=False):
             self.text = text
             self.photo = photo or []
+            self.document = None
             self.replies = []
             self.photo_replies = []
+            self.document_replies = []
+            self.fail_photo = fail_photo
 
-        async def reply_text(self, text, reply_markup=None):
+        async def reply_text(self, text, reply_markup=None, parse_mode=None, disable_web_page_preview=None):
             self.replies.append(text)
 
         async def reply_photo(self, photo, caption=None, parse_mode=None):
+            if self.fail_photo:
+                raise admin_mod.BadRequest("Wrong file identifier/http URL specified")
             self.photo_replies.append((photo, caption, parse_mode))
+
+        async def reply_document(self, document, caption=None, parse_mode=None):
+            self.document_replies.append((document, caption, parse_mode))
 
     class DummyUpdate:
         def __init__(self, text):
@@ -246,17 +254,25 @@ async def test_row_handler_valid(tickets, utils):
 @pytest.mark.asyncio
 async def test_comp_handler_valid(tickets, utils):
     class DummyMessage:
-        def __init__(self, text, photo=None):
+        def __init__(self, text, photo=None, *, fail_photo=False):
             self.text = text
             self.photo = photo or []
+            self.document = None
             self.replies = []
             self.photo_replies = []
+            self.document_replies = []
+            self.fail_photo = fail_photo
 
-        async def reply_text(self, text, reply_markup=None):
+        async def reply_text(self, text, reply_markup=None, parse_mode=None, disable_web_page_preview=None):
             self.replies.append(text)
 
         async def reply_photo(self, photo, caption=None, parse_mode=None):
+            if self.fail_photo:
+                raise admin_mod.BadRequest("Wrong file identifier/http URL specified")
             self.photo_replies.append((photo, caption, parse_mode))
+
+        async def reply_document(self, document, caption=None, parse_mode=None):
+            self.document_replies.append((document, caption, parse_mode))
 
     class DummyUpdate:
         def __init__(self, text):
@@ -273,17 +289,25 @@ async def test_comp_handler_valid(tickets, utils):
 @pytest.mark.asyncio
 async def test_row_handler_cancel(bot):
     class DummyMessage:
-        def __init__(self, text, photo=None):
+        def __init__(self, text, photo=None, *, fail_photo=False):
             self.text = text
             self.photo = photo or []
+            self.document = None
             self.replies = []
             self.photo_replies = []
+            self.document_replies = []
+            self.fail_photo = fail_photo
 
-        async def reply_text(self, text, reply_markup=None):
+        async def reply_text(self, text, reply_markup=None, parse_mode=None, disable_web_page_preview=None):
             self.replies.append(text)
 
         async def reply_photo(self, photo, caption=None, parse_mode=None):
+            if self.fail_photo:
+                raise admin_mod.BadRequest("Wrong file identifier/http URL specified")
             self.photo_replies.append((photo, caption, parse_mode))
+
+        async def reply_document(self, document, caption=None, parse_mode=None):
+            self.document_replies.append((document, caption, parse_mode))
 
     class DummyUpdate:
         def __init__(self, text):
@@ -488,17 +512,25 @@ async def test_daily_message_admin_flow(monkeypatch, tmp_path):
     admin_mod = importlib.import_module('helpdesk_bot.handlers.admin')
 
     class DummyMessage:
-        def __init__(self, text, photo=None):
+        def __init__(self, text, photo=None, *, fail_photo=False):
             self.text = text
             self.photo = photo or []
+            self.document = None
             self.replies = []
             self.photo_replies = []
+            self.document_replies = []
+            self.fail_photo = fail_photo
 
-        async def reply_text(self, text, reply_markup=None):
+        async def reply_text(self, text, reply_markup=None, parse_mode=None, disable_web_page_preview=None):
             self.replies.append(text)
 
         async def reply_photo(self, photo, caption=None, parse_mode=None):
+            if self.fail_photo:
+                raise admin_mod.BadRequest("Wrong file identifier/http URL specified")
             self.photo_replies.append((photo, caption, parse_mode))
+
+        async def reply_document(self, document, caption=None, parse_mode=None):
+            self.document_replies.append((document, caption, parse_mode))
 
     class DummyUser:
         def __init__(self, user_id):
@@ -507,9 +539,9 @@ async def test_daily_message_admin_flow(monkeypatch, tmp_path):
     class DummyUpdate:
         counter = 0
 
-        def __init__(self, text, photo=None):
+        def __init__(self, text, photo=None, *, fail_photo=False):
             DummyUpdate.counter += 1
-            self.message = DummyMessage(text, photo)
+            self.message = DummyMessage(text, photo, fail_photo=fail_photo)
             self.effective_user = DummyUser(1)
             self.update_id = DummyUpdate.counter
 
@@ -547,6 +579,7 @@ async def test_daily_message_admin_flow(monkeypatch, tmp_path):
     assert not messages[0]['disable_preview']
     assert messages[0]['parse_mode'] == ''
     assert messages[0]['photo_file_id'] == ''
+    assert messages[0]['photo_is_document'] is False
 
     update_format = DummyUpdate('Форматирование')
     await admin_mod.daily_message_menu(update_format, ctx)
@@ -591,11 +624,16 @@ async def test_daily_message_admin_flow(monkeypatch, tmp_path):
     await admin_mod.daily_message_save_photo(update_photo, ctx)
     msg = await db_mod.get_daily_message(message_id)
     assert msg['photo_file_id'] == 'photo123'
+    assert msg['photo_is_document'] is False
     assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_SELECTED
 
     update_preview = DummyUpdate('Предпросмотр')
     await admin_mod.daily_message_menu(update_preview, ctx)
-    assert ('photo123', None, 'Markdown') in update_preview.message.photo_replies
+    assert ('photo123', None, None) in update_preview.message.photo_replies
+
+    update_preview_fail = DummyUpdate('Предпросмотр', fail_photo=True)
+    await admin_mod.daily_message_menu(update_preview_fail, ctx)
+    assert ('photo123', None, None) in update_preview_fail.message.document_replies
 
     update_change_photo_again = DummyUpdate('Изменить картинку')
     await admin_mod.daily_message_menu(update_change_photo_again, ctx)
@@ -605,7 +643,25 @@ async def test_daily_message_admin_flow(monkeypatch, tmp_path):
     await admin_mod.daily_message_save(update_remove_photo, ctx)
     msg = await db_mod.get_daily_message(message_id)
     assert msg['photo_file_id'] == ''
+    assert msg['photo_is_document'] is False
     assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_SELECTED
+
+    update_change_photo_doc = DummyUpdate('Изменить картинку')
+    await admin_mod.daily_message_menu(update_change_photo_doc, ctx)
+    update_doc_photo = DummyUpdate('')
+    update_doc_photo.message.photo = []
+    update_doc_photo.message.document = types.SimpleNamespace(
+        file_id='doc789', mime_type='image/png', file_name='image.png'
+    )
+    await admin_mod.daily_message_save_photo(update_doc_photo, ctx)
+    msg = await db_mod.get_daily_message(message_id)
+    assert msg['photo_file_id'] == 'doc789'
+    assert msg['photo_is_document'] is True
+    assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_SELECTED
+
+    update_preview_doc = DummyUpdate('Предпросмотр', fail_photo=True)
+    await admin_mod.daily_message_menu(update_preview_doc, ctx)
+    assert ('doc789', None, None) in update_preview_doc.message.document_replies
 
     update_delete = DummyUpdate('Удалить сообщение')
     await admin_mod.daily_message_menu(update_delete, ctx)
@@ -770,15 +826,22 @@ async def test_send_daily_message(monkeypatch, tmp_path):
         def __init__(self):
             self.sent = []
             self.photos = []
-            self.fail_photos = False
+            self.documents = []
+            self.fail_photos_rights = False
+            self.fail_photos_invalid = False
 
         async def send_message(self, chat_id, text, parse_mode=None, disable_web_page_preview=None):
             self.sent.append((chat_id, text, parse_mode, disable_web_page_preview))
 
         async def send_photo(self, chat_id, photo, caption=None, parse_mode=None):
-            if self.fail_photos:
+            if self.fail_photos_rights:
                 raise daily_mod.BadRequest("Not enough rights to send photos to the chat")
+            if self.fail_photos_invalid:
+                raise daily_mod.BadRequest("Wrong file identifier/http URL specified")
             self.photos.append((chat_id, photo, caption, parse_mode))
+
+        async def send_document(self, chat_id, document, caption=None, parse_mode=None):
+            self.documents.append((chat_id, document, caption, parse_mode))
 
     job = types.SimpleNamespace(data={'message_id': message_id})
     ctx = types.SimpleNamespace(bot=DummyBot(), job=job)
@@ -788,29 +851,70 @@ async def test_send_daily_message(monkeypatch, tmp_path):
 
     ctx.bot.sent.clear()
     ctx.bot.photos.clear()
-    await db_mod.update_daily_message(message_id, photo_file_id='photo123')
+    await db_mod.update_daily_message(
+        message_id,
+        photo_file_id='photo123',
+        photo_is_document=False,
+    )
     await daily_mod.send_daily_message(ctx)
     assert ctx.bot.sent == []
     assert ctx.bot.photos == [(123, 'photo123', 'Привет', 'Markdown')]
 
     ctx.bot.sent.clear()
     ctx.bot.photos.clear()
-    ctx.bot.fail_photos = True
+    ctx.bot.fail_photos_rights = True
     await daily_mod.send_daily_message(ctx)
     assert ctx.bot.photos == []
     assert ctx.bot.sent == [(123, 'Привет', 'Markdown', True)]
-    ctx.bot.fail_photos = False
+    ctx.bot.fail_photos_rights = False
 
     ctx.bot.sent.clear()
     ctx.bot.photos.clear()
-    await db_mod.update_daily_message(message_id, text='', photo_file_id='')
+    ctx.bot.documents.clear()
+    ctx.bot.fail_photos_invalid = True
+    await db_mod.update_daily_message(
+        message_id,
+        photo_file_id='doc456',
+        photo_is_document=False,
+    )
+    await daily_mod.send_daily_message(ctx)
+    assert ctx.bot.photos == []
+    assert ctx.bot.documents == [(123, 'doc456', 'Привет', 'Markdown')]
+    msg = await db_mod.get_daily_message(message_id)
+    assert msg['photo_is_document'] is True
+    ctx.bot.fail_photos_invalid = False
+
+    ctx.bot.sent.clear()
+    ctx.bot.photos.clear()
+    ctx.bot.documents.clear()
+    await daily_mod.send_daily_message(ctx)
+    assert ctx.bot.photos == []
+    assert ctx.bot.documents == [(123, 'doc456', 'Привет', 'Markdown')]
+    msg = await db_mod.get_daily_message(message_id)
+    assert msg['photo_is_document'] is True
+
+    ctx.bot.sent.clear()
+    ctx.bot.photos.clear()
+    ctx.bot.documents.clear()
+    await db_mod.update_daily_message(
+        message_id,
+        text='',
+        photo_file_id='',
+        photo_is_document=False,
+    )
     await daily_mod.send_daily_message(ctx)
     assert ctx.bot.sent == []
     assert ctx.bot.photos == []
+    assert ctx.bot.documents == []
 
     ctx.bot.sent.clear()
-    ctx.bot.fail_photos = True
-    await db_mod.update_daily_message(message_id, text='', photo_file_id='photo321')
+    ctx.bot.fail_photos_rights = True
+    await db_mod.update_daily_message(
+        message_id,
+        text='',
+        photo_file_id='photo321',
+        photo_is_document=False,
+    )
     await daily_mod.send_daily_message(ctx)
     assert ctx.bot.photos == []
     assert ctx.bot.sent == [
@@ -821,6 +925,9 @@ async def test_send_daily_message(monkeypatch, tmp_path):
             True,
         )
     ]
+    ctx.bot.fail_photos_rights = False
+    msg = await db_mod.get_daily_message(message_id)
+    assert msg['photo_is_document'] is False
 
 
 @pytest.mark.asyncio
@@ -848,6 +955,7 @@ async def test_bot_send_daily_message_uses_new_daily_message(monkeypatch, tmp_pa
         parse_mode='Markdown',
         disable_preview=False,
         photo_file_id='photo123',
+        photo_is_document=False,
     )
 
     class FixedDatetime:

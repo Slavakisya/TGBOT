@@ -54,11 +54,20 @@ async def send_daily_message(context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id_int = int(chat_id)
     parse_mode = entry["parse_mode"] or None
     disable_preview = entry["disable_preview"]
+    photo_is_document = bool(entry.get("photo_is_document"))
 
     try:
         if photo_id:
             caption = text or None
             photo_parse_mode = parse_mode if caption else None
+            if photo_is_document:
+                await context.bot.send_document(
+                    chat_id_int,
+                    photo_id,
+                    caption=caption,
+                    parse_mode=photo_parse_mode,
+                )
+                return
             try:
                 await context.bot.send_photo(
                     chat_id_int,
@@ -68,23 +77,38 @@ async def send_daily_message(context: ContextTypes.DEFAULT_TYPE) -> None:
                 )
                 return
             except BadRequest as exc:
-                if "Not enough rights to send photos to the chat" not in str(exc):
-                    raise
-                if not text:
-                    fallback_text = (
-                        "⚠️ Не удалось отправить фото ежедневного сообщения "
-                        f"#{message_id}: нет прав на отправку изображений."
+                error_text = str(exc)
+                if "Not enough rights to send photos to the chat" in error_text:
+                    if not text:
+                        fallback_text = (
+                            "⚠️ Не удалось отправить фото ежедневного сообщения "
+                            f"#{message_id}: нет прав на отправку изображений."
+                        )
+                        await context.bot.send_message(
+                            chat_id_int,
+                            fallback_text,
+                            disable_web_page_preview=True,
+                        )
+                        return
+                    log.warning(
+                        "Чат %s не позволяет отправлять фото, отправляем только текст.",
+                        chat_id,
                     )
-                    await context.bot.send_message(
+                else:
+                    log.warning(
+                        "Не удалось отправить фото ежедневного сообщения #%s как фото: %s. "
+                        "Пробуем отправить как документ.",
+                        message_id,
+                        exc,
+                    )
+                    await context.bot.send_document(
                         chat_id_int,
-                        fallback_text,
-                        disable_web_page_preview=True,
+                        photo_id,
+                        caption=caption,
+                        parse_mode=photo_parse_mode,
                     )
+                    await db.update_daily_message(message_id, photo_is_document=True)
                     return
-                log.warning(
-                    "Чат %s не позволяет отправлять фото, отправляем только текст.",
-                    chat_id,
-                )
 
         await context.bot.send_message(
             chat_id_int,
