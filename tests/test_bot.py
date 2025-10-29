@@ -579,6 +579,7 @@ async def test_daily_message_admin_flow(monkeypatch, tmp_path):
     assert not messages[0]['disable_preview']
     assert messages[0]['parse_mode'] == ''
     assert messages[0]['photo_file_id'] == ''
+    assert messages[0]['photo_is_document'] is False
 
     update_format = DummyUpdate('Форматирование')
     await admin_mod.daily_message_menu(update_format, ctx)
@@ -623,6 +624,7 @@ async def test_daily_message_admin_flow(monkeypatch, tmp_path):
     await admin_mod.daily_message_save_photo(update_photo, ctx)
     msg = await db_mod.get_daily_message(message_id)
     assert msg['photo_file_id'] == 'photo123'
+    assert msg['photo_is_document'] is False
     assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_SELECTED
 
     update_preview = DummyUpdate('Предпросмотр')
@@ -641,6 +643,7 @@ async def test_daily_message_admin_flow(monkeypatch, tmp_path):
     await admin_mod.daily_message_save(update_remove_photo, ctx)
     msg = await db_mod.get_daily_message(message_id)
     assert msg['photo_file_id'] == ''
+    assert msg['photo_is_document'] is False
     assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_SELECTED
 
     update_change_photo_doc = DummyUpdate('Изменить картинку')
@@ -653,6 +656,7 @@ async def test_daily_message_admin_flow(monkeypatch, tmp_path):
     await admin_mod.daily_message_save_photo(update_doc_photo, ctx)
     msg = await db_mod.get_daily_message(message_id)
     assert msg['photo_file_id'] == 'doc789'
+    assert msg['photo_is_document'] is True
     assert ctx.user_data[admin_mod.DAILY_STATE_KEY] == admin_mod.DAILY_STATE_SELECTED
 
     update_preview_doc = DummyUpdate('Предпросмотр', fail_photo=True)
@@ -847,7 +851,11 @@ async def test_send_daily_message(monkeypatch, tmp_path):
 
     ctx.bot.sent.clear()
     ctx.bot.photos.clear()
-    await db_mod.update_daily_message(message_id, photo_file_id='photo123')
+    await db_mod.update_daily_message(
+        message_id,
+        photo_file_id='photo123',
+        photo_is_document=False,
+    )
     await daily_mod.send_daily_message(ctx)
     assert ctx.bot.sent == []
     assert ctx.bot.photos == [(123, 'photo123', 'Привет', 'Markdown')]
@@ -864,16 +872,36 @@ async def test_send_daily_message(monkeypatch, tmp_path):
     ctx.bot.photos.clear()
     ctx.bot.documents.clear()
     ctx.bot.fail_photos_invalid = True
-    await db_mod.update_daily_message(message_id, photo_file_id='doc456')
+    await db_mod.update_daily_message(
+        message_id,
+        photo_file_id='doc456',
+        photo_is_document=False,
+    )
     await daily_mod.send_daily_message(ctx)
     assert ctx.bot.photos == []
     assert ctx.bot.documents == [(123, 'doc456', 'Привет', 'Markdown')]
+    msg = await db_mod.get_daily_message(message_id)
+    assert msg['photo_is_document'] is True
     ctx.bot.fail_photos_invalid = False
 
     ctx.bot.sent.clear()
     ctx.bot.photos.clear()
     ctx.bot.documents.clear()
-    await db_mod.update_daily_message(message_id, text='', photo_file_id='')
+    await daily_mod.send_daily_message(ctx)
+    assert ctx.bot.photos == []
+    assert ctx.bot.documents == [(123, 'doc456', 'Привет', 'Markdown')]
+    msg = await db_mod.get_daily_message(message_id)
+    assert msg['photo_is_document'] is True
+
+    ctx.bot.sent.clear()
+    ctx.bot.photos.clear()
+    ctx.bot.documents.clear()
+    await db_mod.update_daily_message(
+        message_id,
+        text='',
+        photo_file_id='',
+        photo_is_document=False,
+    )
     await daily_mod.send_daily_message(ctx)
     assert ctx.bot.sent == []
     assert ctx.bot.photos == []
@@ -881,7 +909,12 @@ async def test_send_daily_message(monkeypatch, tmp_path):
 
     ctx.bot.sent.clear()
     ctx.bot.fail_photos_rights = True
-    await db_mod.update_daily_message(message_id, text='', photo_file_id='photo321')
+    await db_mod.update_daily_message(
+        message_id,
+        text='',
+        photo_file_id='photo321',
+        photo_is_document=False,
+    )
     await daily_mod.send_daily_message(ctx)
     assert ctx.bot.photos == []
     assert ctx.bot.sent == [
@@ -893,6 +926,8 @@ async def test_send_daily_message(monkeypatch, tmp_path):
         )
     ]
     ctx.bot.fail_photos_rights = False
+    msg = await db_mod.get_daily_message(message_id)
+    assert msg['photo_is_document'] is False
 
 
 @pytest.mark.asyncio
@@ -920,6 +955,7 @@ async def test_bot_send_daily_message_uses_new_daily_message(monkeypatch, tmp_pa
         parse_mode='Markdown',
         disable_preview=False,
         photo_file_id='photo123',
+        photo_is_document=False,
     )
 
     class FixedDatetime:
