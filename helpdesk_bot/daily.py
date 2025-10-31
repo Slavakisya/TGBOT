@@ -1,18 +1,20 @@
 from __future__ import annotations
 
+import os
+from io import BytesIO
 from datetime import time
 from typing import Any
-
 from zoneinfo import ZoneInfo
 
+import aiohttp
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes, JobQueue
 
 from . import db
 from .utils import log
 
-
 KYIV_TZ = ZoneInfo("Europe/Kyiv")
+CAPTION_LIMIT = 1024
 
 
 def _parse_time(value: str) -> time:
@@ -31,6 +33,52 @@ def _parse_time(value: str) -> time:
         return time(hour=17, minute=0, tzinfo=KYIV_TZ)
 
 
+async def _download_to_bytesio(url: str) -> BytesIO:
+    """Скачать URL и вернуть BytesIO с корректным 'name', чтобы PTB понял тип файла."""
+    timeout = aiohttp.ClientTimeout(total=30)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(url, allow_redirects=True) as resp:
+            if resp.status != 200:
+                raise BadRequest(f"Bad image url: HTTP {resp.status} {url}")
+            data = await resp.read()
+            ctype = (resp.headers.get("Content-Type") or "").lower()
+            ext = ".jpg"
+            if "png" in ctype:
+                ext = ".png"
+            elif "webp" in ctype:
+                ext = ".webp"
+            elif "gif" in ctype:
+                ext = ".gif"
+            bio = BytesIO(data)
+            # PTB использует атрибут name, если он есть
+            bio.name = f"image{ext}"
+            return bio
+
+
+async def _prepare_media(value: str | None):
+    """
+    Возвращает одно из:
+      - str (telegram file_id) — использовать как есть;
+      - BytesIO (если был URL) — отправляем как файл;
+      - file object (если локальный путь) — отправляем как файл;
+      - None.
+    """
+    if not value:
+        return None
+
+    v = value.strip()
+    if v.startswith("http://") or v.startswith("https://"):
+        return await _download_to_bytesio(v)
+
+    if os.path.isabs(v) or os.path.exists(v):
+        if not os.path.exists(v):
+            raise BadRequest(f"File not found: {v}")
+        return open(v, "rb")
+
+    # Похоже на telegram file_id
+    return v
+
+
 async def send_daily_message(context: ContextTypes.DEFAULT_TYPE) -> None:
     job = getattr(context, "job", None)
     data: dict[str, Any] | None = getattr(job, "data", None) if job else None
@@ -46,82 +94,95 @@ async def send_daily_message(context: ContextTypes.DEFAULT_TYPE) -> None:
     if not entry:
         return
 
-    text = entry["text"].strip()
-    photo_id = entry.get("photo_file_id") or ""
+    text = (entry["text"] or "").strip()
+    photo_id = (entry.get("photo_file_id") or "").strip()
     if not text and not photo_id:
         return
 
     chat_id_int = int(chat_id)
-    parse_mode = entry["parse_mode"] or None
-    disable_preview = entry["disable_preview"]
+    parse_mode = entry.get("parse_mode") or None
+    disable_preview = bool(entry.get("disable_preview"))
     photo_is_document = bool(entry.get("photo_is_document"))
+
+    caption = text[:CAPTION_LIMIT] if text else None
 
     try:
         if photo_id:
-            caption = text or None
-            photo_parse_mode = parse_mode if caption else None
+            media = await _prepare_media(photo_id)
+
+            # Если помечено как документ — пробуем документом
             if photo_is_document:
-                await context.bot.send_document(
-                    chat_id_int,
-                    photo_id,
-                    caption=caption,
-                    parse_mode=photo_parse_mode,
-                )
-                return
+                try:
+                    await context.bot.send_document(
+                        chat_id_int,
+                        media,
+                        caption=caption,
+                        parse_mode=parse_mode if caption else None,
+                    )
+                    return
+                except BadRequest as exc:
+                    log.warning(
+                        "Ежедневное #%s не ушло как документ: %s — пробуем как фото.",
+                        message_id, exc
+                    )
+                    # fallthrough на отправку фото ниже
+
+            # Пытаемся отправить фото
             try:
                 await context.bot.send_photo(
                     chat_id_int,
-                    photo_id,
+                    media,
                     caption=caption,
-                    parse_mode=photo_parse_mode,
+                    parse_mode=parse_mode if caption else None,
                 )
                 return
             except BadRequest as exc:
-                error_text = str(exc)
-                if "Not enough rights to send photos to the chat" in error_text:
+                err = str(exc)
+                if "Not enough rights to send photos to the chat" in err:
                     if not text:
-                        fallback_text = (
-                            "⚠️ Не удалось отправить фото ежедневного сообщения "
-                            f"#{message_id}: нет прав на отправку изображений."
-                        )
                         await context.bot.send_message(
                             chat_id_int,
-                            fallback_text,
+                            (
+                                "⚠️ Не удалось отправить фото ежедневного сообщения "
+                                f"#{message_id}: нет прав на отправку изображений."
+                            ),
                             disable_web_page_preview=True,
                         )
                         return
-                    log.warning(
-                        "Чат %s не позволяет отправлять фото, отправляем только текст.",
-                        chat_id,
-                    )
+                    log.warning("Чат %s не позволяет фото — отправляем только текст.", chat_id)
                 else:
+                    # Фото не получилось — пробуем документом и сохраняем флаг
                     log.warning(
-                        "Не удалось отправить фото ежедневного сообщения #%s как фото: %s. "
-                        "Пробуем отправить как документ.",
-                        message_id,
-                        exc,
+                        "Ежедневное #%s не ушло как фото: %s — пробуем документом.",
+                        message_id, exc
                     )
-                    await context.bot.send_document(
-                        chat_id_int,
-                        photo_id,
-                        caption=caption,
-                        parse_mode=photo_parse_mode,
-                    )
-                    await db.update_daily_message(message_id, photo_is_document=True)
-                    return
+                    try:
+                        await context.bot.send_document(
+                            chat_id_int,
+                            media,
+                            caption=caption,
+                            parse_mode=parse_mode if caption else None,
+                        )
+                        await db.update_daily_message(message_id, photo_is_document=True)
+                        return
+                    except Exception as exc2:
+                        log.warning(
+                            "Ежедневное #%s не ушло документом: %s — падаем в текст.",
+                            message_id, exc2
+                        )
+                        # fallthrough к тексту
 
-        await context.bot.send_message(
-            chat_id_int,
-            entry["text"],
-            parse_mode=parse_mode,
-            disable_web_page_preview=disable_preview,
-        )
-    except Exception as exc:  # pragma: no cover - runtime network issues
+        if text:
+            await context.bot.send_message(
+                chat_id_int,
+                text,
+                parse_mode=parse_mode,
+                disable_web_page_preview=disable_preview,
+            )
+    except Exception as exc:  # pragma: no cover
         log.warning(
             "Не удалось отправить ежедневное сообщение #%s в чат %s: %s",
-            message_id,
-            chat_id,
-            exc,
+            message_id, chat_id, exc
         )
 
 
@@ -141,7 +202,4 @@ async def refresh_daily_jobs(job_queue: JobQueue | None) -> None:
             name=f"daily_message:{message['id']}",
             data={"message_id": message["id"]},
         )
-    log.info(
-        "Запланировано ежедневных сообщений: %s",
-        len(messages),
-    )
+    log.info("Запланировано ежедневных сообщений: %s", len(messages))
